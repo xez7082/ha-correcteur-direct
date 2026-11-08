@@ -33,6 +33,30 @@ avec **Mistral AI**, dès qu'elles apparaissent, sans attendre une analyse progr
 8. **Contrôle de configuration** : après toute modification de fichier, la configuration est
    vérifiée. Si la modification ajoute une erreur, le fichier est restauré immédiatement.
 
+## 🛠️ Bouton « Corriger les erreurs YAML »
+
+Un appui vérifie **tous** les fichiers YAML de `/config` et répare les erreurs de syntaxe :
+
+| Erreur | Réparation |
+|---|---|
+| Ligne mal indentée (un espace de trop ou de moins) | réalignée sur le niveau voisin |
+| Tabulations | remplacées par des espaces |
+| `name:Vacances` (espace manquante) | `name: Vacances` |
+| Guillemet oublié en fin de ligne | guillemet fermant ajouté |
+| Cas plus difficiles (crochet non fermé…) | proposé par Mistral |
+
+- Les réparations simples se font **sur place, sans IA et sans connexion internet**.
+- **Aucune réparation n'est appliquée si le fichier ne se relit pas parfaitement ensuite**,
+  y compris celles proposées par Mistral.
+- Sauvegarde avant chaque modification, bouton **Annuler la modification** sur chaque carte.
+- `known_devices.yaml` peut être réparé localement mais n'est jamais envoyé à l'IA (données personnelles).
+  `secrets.yaml`, `_archive/`, `blueprints/` et les fichiers « sauvegarde » ne sont jamais modifiés.
+- Dans l'avant/après, chaque espace de début de ligne est affiché par un point `·`.
+- Service équivalent : `correcteur_direct.corriger_yaml` (`appliquer: false` pour seulement proposer).
+- Quand une erreur YAML apparaît dans le journal, la vérification se lance aussi toute seule.
+
+![Réparation YAML](images/panneau-yaml.png)
+
 ## Installation
 
 ### Par HACS (recommandé)

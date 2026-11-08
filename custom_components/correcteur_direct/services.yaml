@@ -32,3 +32,9 @@ annuler_correctif:
         text:
 vider_historique:
 tester:
+corriger_yaml:
+  fields:
+    appliquer:
+      default: true
+      selector:
+        boolean:

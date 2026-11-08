@@ -136,6 +136,16 @@
     "tester": {
       "name": "Tester",
       "description": "Écrit une fausse erreur dans le journal pour vérifier la détection en direct"
+    },
+    "corriger_yaml": {
+      "name": "Corriger les erreurs YAML",
+      "description": "Vérifie tous les fichiers YAML et répare les erreurs de syntaxe (indentation, tabulations, guillemets, deux-points). Sauvegarde avant chaque modification.",
+      "fields": {
+        "appliquer": {
+          "name": "Appliquer",
+          "description": "Désactivé : propose seulement les corrections, sans modifier les fichiers"
+        }
+      }
     }
   }
 }

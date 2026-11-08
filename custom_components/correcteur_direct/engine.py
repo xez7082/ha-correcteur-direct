@@ -54,6 +54,10 @@ from .const import (
     STATUTS_OUVERTS,
     VERSION,
 )
+from pathlib import Path
+
+from . import yaml_doctor
+from .const import FICHIERS_EXCLUS
 from .context import collecter_contexte
 from .fixer import CorrectionErreur, Correcteur
 from .masking import masquer
@@ -99,6 +103,14 @@ def signature(nom: str, message: str) -> str:
     norm = re.sub(r"\d+(?:[.,:]\d+)*", "#", norm)
     norm = re.sub(r"\s+", " ", norm).strip()[:300]
     return hashlib.sha1(f"{nom}|{norm}".encode()).hexdigest()[:16]
+
+
+LOGGERS_CONTROLE = (
+    "annotatedyaml",
+    "homeassistant.config",
+    "homeassistant.util.yaml",
+    "homeassistant.helpers.check_config",
+)
 
 
 class _Ecouteur(logging.Handler):
@@ -150,6 +162,7 @@ class Moteur:
         self.niveau = logging.ERROR
         self.cle_invalide = False
         self.pause_jusqua = 0.0
+        self.verrou_yaml = asyncio.Lock()
         self.intervalle = 2.0  # secondes entre deux appels, s'adapte aux refus de Mistral
         self._ecouteur: _Ecouteur | None = None
         self._tache: asyncio.Task | None = None
@@ -236,6 +249,11 @@ class Moteur:
     @callback
     def recevoir(self, d: dict[str, Any], balayage: bool = False) -> None:
         """Appelé pour chaque erreur, à l'instant où elle est écrite au journal."""
+        # Messages produits par nos propres vérifications : ce ne sont pas de nouvelles erreurs
+        if (self.correcteur.en_controle or self.verrou_yaml.locked()) and (
+            d["nom"].startswith(LOGGERS_CONTROLE) or yaml_doctor.est_erreur_yaml(d["message"])
+        ):
+            return
         sig = signature(d["nom"], d["message"])
         if sig in self.ignores:
             return
@@ -439,6 +457,18 @@ class Moteur:
             pb["statut"] = ST_ERREUR_IA
             pb["erreur"] = "Clé API Mistral absente ou refusée (voir Options de l'intégration)."
             return
+        if pb.get("type") != "yaml" and yaml_doctor.est_erreur_yaml(
+            f"{pb['message']}\n{pb.get('exception') or ''}"
+        ):
+            bilan = await self.corriger_yaml(appliquer=bool(opts[CONF_AUTO_FILES]))
+            pb["statut"] = ST_SANS
+            pb["erreur"] = (
+                f"Erreur de syntaxe YAML : {bilan['erreurs']} fichier(s) en erreur, "
+                f"{bilan['corriges']} réparé(s), {bilan['proposes']} à valider. "
+                "Voir la ou les cartes « Syntaxe YAML »."
+            )
+            return
+
         if not self._quota_ok():
             pb["statut"] = ST_QUOTA
             pb["erreur"] = (
@@ -567,6 +597,13 @@ class Moteur:
             self._maj()
             return True
 
+        if pb.get("type") == "yaml":
+            pb["statut"] = ST_CORRIGE
+            self.stats["corrections"] += 1
+            self._notifier_resolu(pb)
+            self._maj()
+            return True
+
         pb["statut"] = ST_VERIF
         self.en_verif[pb["sig"]] = iid
         self._maj()
@@ -609,6 +646,148 @@ class Moteur:
             self._notifier_resolu(pb)
         pb.pop("recidive_verif", None)
         self._maj()
+
+    # ---------- erreurs de syntaxe YAML ----------
+
+    def _probleme_yaml(self, e: dict[str, Any]) -> dict[str, Any]:
+        sig = signature("syntaxe_yaml", e["relatif"])
+        maintenant = _maintenant()
+        message = (
+            f"Erreur de syntaxe YAML dans {e['chemin']}, ligne {e['ligne']}, "
+            f"colonne {e['colonne']} : {e['message']}"
+        )
+        iid = self.par_sig.get(sig)
+        pb = self.problemes.get(iid) if iid else None
+        if pb is None:
+            pb = {
+                "id": uuid.uuid4().hex[:10], "sig": sig, "type": "yaml", "statut": ST_ANALYSE,
+                "nom": "Syntaxe YAML", "niveau": "ERROR", "occurrences": 0,
+                "premier": maintenant, "historique": [], "exception": None,
+                "source": e["relatif"],
+            }
+            self.problemes[pb["id"]] = pb
+            self.par_sig[sig] = pb["id"]
+        pb.update(
+            statut=ST_ANALYSE, message=message, dernier=maintenant, analyse=None, retour_arriere=None,
+            fichiers=[{"chemin": e["chemin"], "ligne": e["ligne"], "origine": "vérification YAML"}],
+        )
+        pb["occurrences"] = pb.get("occurrences", 0) + 1
+        pb.pop("erreur", None)
+        return pb
+
+    async def _yaml_par_ia(self, e: dict[str, Any]) -> dict[str, Any] | None:
+        """Cas difficiles : on demande à Mistral, puis on vérifie localement le résultat."""
+        opts = self.opts
+        if not opts.get(CONF_API_KEY) or self.cle_invalide or not self._quota_ok():
+            return None
+        if Path(e["chemin"]).name in FICHIERS_EXCLUS:
+            return None  # données personnelles : jamais envoyées
+        attente = self.pause_jusqua - time.monotonic()
+        if attente > 0:
+            await asyncio.sleep(attente)
+
+        def _lire() -> str:
+            return Path(e["chemin"]).read_text(encoding="utf-8", errors="replace")
+
+        lignes = (await self.hass.async_add_executor_job(_lire)).split("\n")
+        debut = max(0, e["ligne"] - 16)
+        fin = min(len(lignes), e["ligne"] + 15)
+        texte = masquer(
+            "ERREUR DE SYNTAXE YAML (le fichier ne peut pas être lu par Home Assistant)\n"
+            f"Fichier « {e['relatif']} », ligne {e['ligne']}, colonne {e['colonne']} : {e['message']}\n\n"
+            "Corrige UNIQUEMENT la syntaxe (indentation, guillemets, deux-points, crochets), "
+            "sans changer le sens ni les valeurs. Réponds avec type modif_fichier.\n\n"
+            f"### fichier « {e['relatif']} » (lignes {debut + 1} à {fin})\n```yaml\n"
+            + "\n".join(lignes[debut:fin]) + "\n```"
+        )
+        self.appels.append(time.monotonic())
+        self.stats["appels_ia"] += 1
+        try:
+            res = await analyser(
+                async_get_clientsession(self.hass), opts[CONF_API_KEY], opts[CONF_MODEL], texte
+            )
+        except MistralQuota as err:
+            if self.appels:
+                self.appels.pop()
+            self.intervalle = min(120.0, self.intervalle * 2)
+            self.pause_jusqua = time.monotonic() + max(err.attente or 0, self.intervalle * 2, 10)
+            return None
+        except MistralErreur:
+            return None
+        c = res["correctif"]
+        if c["type"] != "modif_fichier" or c["fichier"].lstrip("/") != e["relatif"]:
+            return None
+        ok = await self.hass.async_add_executor_job(
+            yaml_doctor.simuler, Path(e["chemin"]), c["rechercher"], c["remplacer"]
+        )
+        if not ok:
+            return None
+        c["actions"] = [res.get("explication") or "correction proposée par Mistral"]
+        return c
+
+    async def corriger_yaml(self, appliquer: bool = True) -> dict[str, Any]:
+        """Vérifie tous les YAML et répare les erreurs de syntaxe (une seule à la fois)."""
+        async with self.verrou_yaml:
+            return await self._corriger_yaml(appliquer)
+
+    async def _corriger_yaml(self, appliquer: bool) -> dict[str, Any]:
+        racine = self.correcteur.racine
+        erreurs = await self.hass.async_add_executor_job(yaml_doctor.scanner, racine)
+        bilan: dict[str, Any] = {
+            "erreurs": len(erreurs), "corriges": 0, "proposes": 0,
+            "non_repares": 0, "details": [],
+        }
+        # Réparations locales d'abord (instantanées), l'IA ensuite pour le reste
+        locaux = {}
+        for e in erreurs:
+            locaux[e["chemin"]] = await self.hass.async_add_executor_job(
+                yaml_doctor.preparer_correctif, Path(e["chemin"]), racine
+            )
+        erreurs.sort(key=lambda e: locaux[e["chemin"]] is None)
+        for e in erreurs:
+            pb = self._probleme_yaml(e)
+            correctif = locaux[e["chemin"]]
+            source = "locale (sans IA)"
+            if correctif is None:
+                correctif = await self._yaml_par_ia(e)
+                source = "par Mistral, vérifiée localement"
+            if correctif is None:
+                pb["statut"] = ST_SANS
+                pb["analyse"] = {
+                    "resume": f"Syntaxe YAML : {e['relatif']} ligne {e['ligne']}",
+                    "gravite": "critique", "cause": e["message"], "confiance": 0,
+                    "correctif": {"type": "aucun"},
+                    "explication": (
+                        f"Réparation automatique impossible. Ouvrez {e['chemin']} "
+                        f"à la ligne {e['ligne']} (colonne {e['colonne']})."
+                    ),
+                }
+                bilan["non_repares"] += 1
+                bilan["details"].append(f"❌ {e['relatif']} ligne {e['ligne']}")
+                continue
+            pb["analyse"] = {
+                "resume": f"Syntaxe YAML : {e['relatif']} ligne {e['ligne']}",
+                "gravite": "critique",
+                "cause": e["message"],
+                "correctif": correctif,
+                "confiance": 1.0 if correctif.get("local") else 0.9,
+                "explication": f"Réparation {source} : " + " ; ".join(correctif.get("actions", []))
+                + ". Le fichier a été relu sans erreur avec cette correction.",
+            }
+            pb["analyse_le"] = _maintenant()
+            pb["statut"] = ST_PROPOSE
+            if appliquer and await self.appliquer(pb["id"]):
+                bilan["corriges"] += 1
+                bilan["details"].append(f"✅ {e['relatif']} ligne {e['ligne']}")
+            elif appliquer:
+                bilan["non_repares"] += 1
+                bilan["details"].append(f"❌ {e['relatif']} : {pb.get('erreur', '')}")
+            else:
+                bilan["proposes"] += 1
+                bilan["details"].append(f"🔔 {e['relatif']} ligne {e['ligne']} : correction proposée")
+                self._notifier(pb, avec_actions=True)
+        self._maj()
+        return bilan
 
     async def annuler(self, iid: str) -> bool:
         pb = self.problemes.get(iid)

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import shutil
 from datetime import datetime
 from pathlib import Path
@@ -19,6 +20,7 @@ from .const import (
     TYPES_CORRECTIF,
 )
 from .masking import contient_masque
+from . import yaml_doctor
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,10 +36,11 @@ class Correcteur:
         self.hass = hass
         self.racine = Path(hass.config.config_dir).resolve()
         self.sauvegardes = self.racine / DOSSIER_SAUVEGARDES
+        self.en_controle = 0  # > 0 pendant nos propres vérifications de configuration
 
     # ---------- validation ----------
 
-    def chemin_autorise(self, relatif: str) -> Path:
+    def chemin_autorise(self, relatif: str, local: bool = False) -> Path:
         """Retourne le chemin absolu si le fichier peut être modifié, sinon lève."""
         if not relatif:
             raise CorrectionErreur("Aucun fichier indiqué")
@@ -49,7 +52,8 @@ class Correcteur:
         parties = set(chemin.relative_to(self.racine).parts[:-1])
         if parties & DOSSIERS_EXCLUS or any(p.startswith((".", "_")) for p in parties):
             raise CorrectionErreur("Dossier protégé (archives, sauvegardes…)")
-        if chemin.name in FICHIERS_EXCLUS:
+        # Une réparation locale (sans IA) peut toucher known_devices.yaml, jamais secrets.yaml
+        if chemin.name == "secrets.yaml" or (chemin.name in FICHIERS_EXCLUS and not local):
             raise CorrectionErreur("Fichier protégé")
         return chemin
 
@@ -71,12 +75,13 @@ class Correcteur:
             rech, remp = correctif.get("rechercher", ""), correctif.get("remplacer", "")
             if not rech.strip() or rech == remp:
                 return "Modification vide"
-            if contient_masque(rech) or contient_masque(remp):
+            local = correctif.get("local") is True
+            if not local and (contient_masque(rech) or contient_masque(remp)):
                 return "La modification touche une valeur masquée (mot de passe, IP…)"
-            if len(rech) > 4000 or len(remp) > 6000:
+            if not local and (len(rech) > 4000 or len(remp) > 6000):
                 return "Modification trop importante pour être sûre"
             try:
-                chemin = self.chemin_autorise(correctif.get("fichier", ""))
+                chemin = self.chemin_autorise(correctif.get("fichier", ""), local)
             except CorrectionErreur as err:
                 return str(err)
             try:
@@ -90,6 +95,9 @@ class Correcteur:
                 return "Le texte à remplacer n'existe pas dans le fichier"
             if nb > 1:
                 return "Le texte à remplacer apparaît plusieurs fois (ambigu)"
+            # Le fichier doit rester (ou redevenir) un YAML valide
+            if yaml_doctor.erreur(texte.replace(rech, remp, 1)) is not None:
+                return "Après cette modification, le fichier YAML serait invalide"
         return None
 
     # ---------- application ----------
@@ -123,7 +131,7 @@ class Correcteur:
         return await self._modifier_fichier(correctif)
 
     async def _modifier_fichier(self, correctif: dict[str, Any]) -> dict[str, Any]:
-        chemin = self.chemin_autorise(correctif["fichier"])
+        chemin = self.chemin_autorise(correctif["fichier"], correctif.get("local") is True)
         avant = await self._erreurs_config()
 
         def _ecrire() -> str:
@@ -149,7 +157,9 @@ class Correcteur:
         info = {"type": "fichier", "fichier": str(chemin), "sauvegarde": sauvegarde}
 
         apres = await self._erreurs_config()
-        nouvelles = apres - avant
+        nouvelles = await self.hass.async_add_executor_job(
+            self._vraies_nouvelles, apres - avant, chemin
+        )
         if nouvelles:
             await self._restaurer(info)
             raise CorrectionErreur(
@@ -160,11 +170,36 @@ class Correcteur:
         info["recharge"] = await self._recharger(correctif.get("rechargement", ""))
         return info
 
+    @staticmethod
+    def _vraies_nouvelles(nouvelles: set[str], modifie: Path) -> set[str]:
+        """Écarte les erreurs qui viennent d'un AUTRE fichier déjà cassé avant.
+
+        Home Assistant s'arrête au premier fichier YAML illisible : réparer l'un
+        fait apparaître l'erreur du suivant, qui n'est pas une nouvelle erreur.
+        """
+        gardees = set()
+        for message in nouvelles:
+            chemins = {Path(c) for c in re.findall(r'(/[^"\s,]+\.ya?ml)', message)}
+            autres = [c for c in chemins if c.resolve() != modifie.resolve()]
+            deja_casse = False
+            for autre in autres:
+                try:
+                    if yaml_doctor.erreur(autre.read_text(encoding="utf-8", errors="replace")):
+                        deja_casse = True
+                except OSError:
+                    pass
+            if not deja_casse:
+                gardees.add(message)
+        return gardees
+
     async def _erreurs_config(self) -> set[str]:
+        self.en_controle += 1
         try:
             res = await async_check_ha_config_file(self.hass)
         except Exception as err:  # noqa: BLE001
             return {f"Vérification impossible : {err}"}
+        finally:
+            self.en_controle -= 1
         return {str(e.message) for e in res.errors}
 
     async def _recharger(self, domaine: str) -> str:

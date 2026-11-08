@@ -47,6 +47,9 @@ def async_enregistrer_services(hass: HomeAssistant) -> None:
         if not ok:
             raise HomeAssistantError("Rien à annuler pour ce problème")
 
+    async def corriger_yaml(call: ServiceCall) -> ServiceResponse:
+        return await _moteur(hass).corriger_yaml(appliquer=call.data.get("appliquer", True))
+
     async def vider(call: ServiceCall) -> None:
         _moteur(hass).vider()
 
@@ -66,4 +69,9 @@ def async_enregistrer_services(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, "reanalyser", reanalyser, SCHEMA_ID)
     hass.services.async_register(DOMAIN, "annuler_correctif", annuler, SCHEMA_ID)
     hass.services.async_register(DOMAIN, "vider_historique", vider)
+    hass.services.async_register(
+        DOMAIN, "corriger_yaml", corriger_yaml,
+        vol.Schema({vol.Optional("appliquer", default=True): bool}),
+        supports_response=SupportsResponse.OPTIONAL,
+    )
     hass.services.async_register(DOMAIN, "tester", tester)

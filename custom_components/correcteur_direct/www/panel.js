@@ -31,6 +31,13 @@ const TYPES = {
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+// Rend visibles les espaces et tabulations de début de ligne (indentation)
+const espaces = (t) => String(t ?? "").split("\n").map((l) => {
+  const m = l.match(/^[ \t]*/)[0];
+  const marques = m.replace(/ /g, "·").replace(/\t/g, "→   ");
+  return `<span class="esp">${marques}</span>${esc(l.slice(m.length))}`;
+}).join("\n");
+
 function ilYa(iso) {
   if (!iso) return "";
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
@@ -86,6 +93,13 @@ class CorrecteurDirectPanel extends HTMLElement {
         type: "call_service", domain: "correcteur_direct", service,
         service_data: data, return_response: retour,
       });
+      if (service === "corriger_yaml") {
+        const b = r?.response || {};
+        if (!b.erreurs) this._afficherMessage("✅ Tous vos fichiers YAML sont valides", false, 6000);
+        else this._afficherMessage(
+          `${b.erreurs} fichier(s) en erreur : ${b.corriges} réparé(s), ${b.non_repares} à corriger à la main\n` +
+          (b.details || []).join("\n"), b.non_repares > 0, 12000);
+      }
       if (service === "analyser_maintenant") {
         const n = r?.response?.nouveaux_problemes ?? 0;
         this._afficherMessage(n ? `${n} nouvelle(s) erreur(s) trouvée(s)` : "Aucune nouvelle erreur dans le journal");
@@ -96,12 +110,12 @@ class CorrecteurDirectPanel extends HTMLElement {
     setTimeout(() => this._charger(), 400);
   }
 
-  _afficherMessage(txt, erreur = false) {
+  _afficherMessage(txt, erreur = false, duree = 5000) {
     const m = this.shadowRoot.getElementById("message");
     m.textContent = txt;
     m.className = "message visible" + (erreur ? " erreur" : "");
     clearTimeout(this._tMsg);
-    this._tMsg = setTimeout(() => (m.className = "message"), 5000);
+    this._tMsg = setTimeout(() => (m.className = "message"), duree);
   }
 
   _majMenu() {
@@ -142,6 +156,7 @@ class CorrecteurDirectPanel extends HTMLElement {
         .bloc h3 { font-size:15px; text-transform:uppercase; letter-spacing:.05em; color:#38bdf8; margin:0 0 4px; }
         pre { white-space:pre-wrap; word-break:break-word; font:15px/1.45 ui-monospace, Consolas, monospace;
           background:#020617; border:2px solid #24344d; border-radius:10px; padding:10px 12px; margin:4px 0; max-height:340px; overflow:auto; }
+        .esp { color:#fbbf24; }
         pre.moins { border-color:#f87171; } pre.plus { border-color:#4ade80; }
         details summary { cursor:pointer; min-height:48px; display:flex; align-items:center; font-weight:600; color:#38bdf8; font-size:17px; }
         .actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; }
@@ -151,13 +166,14 @@ class CorrecteurDirectPanel extends HTMLElement {
         .vide { text-align:center; color:#cbd5e1; padding:50px 10px; font-size:19px; }
         .alerte { margin:12px 18px 0; padding:14px 16px; border:2px solid #f87171; border-radius:14px; background:#450a0a; }
         .message { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:#0369a1; border:2px solid #38bdf8;
-          padding:14px 22px; border-radius:14px; font-size:17px; opacity:0; pointer-events:none; transition:opacity .2s; z-index:5; max-width:90vw; }
+          padding:14px 22px; border-radius:14px; font-size:17px; white-space:pre-line; opacity:0; pointer-events:none; transition:opacity .2s; z-index:5; max-width:90vw; }
         .message.visible { opacity:1; } .message.erreur { background:#7f1d1d; border-color:#f87171; }
         .reglages { font-size:15px; color:#cbd5e1; padding:0 18px; }
       </style>
       <header>
         <button id="menu" aria-label="Menu">☰</button>
         <h1>🔧 Correcteur en direct<small>Erreurs détectées à l'instant où elles apparaissent · Mistral AI</small></h1>
+        <button id="yaml" class="vert">🛠️ Corriger les erreurs YAML</button>
         <button id="analyser" class="principal">🔍 Analyser le journal</button>
         <button id="tester">🧪 Tester</button>
       </header>
@@ -171,6 +187,14 @@ class CorrecteurDirectPanel extends HTMLElement {
     r.getElementById("menu").onclick = () =>
       this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true }));
     r.getElementById("analyser").onclick = () => this._service("analyser_maintenant", {}, true);
+    r.getElementById("yaml").onclick = () => {
+      if (!confirm("Vérifier tous les fichiers YAML et réparer les erreurs de syntaxe ?\n\nUne sauvegarde est faite avant chaque modification, et chaque réparation peut être annulée.")) return;
+      const b = r.getElementById("yaml");
+      b.disabled = true; b.textContent = "⏳ Vérification…";
+      this._service("corriger_yaml", { appliquer: true }, true).finally(() => {
+        b.disabled = false; b.textContent = "🛠️ Corriger les erreurs YAML";
+      });
+    };
     r.getElementById("tester").onclick = () => {
       this._service("tester");
       this._afficherMessage("Fausse erreur écrite dans le journal : elle doit apparaître ici en quelques secondes");
@@ -246,8 +270,8 @@ class CorrecteurDirectPanel extends HTMLElement {
       let detail = "";
       if (c.type === "modif_fichier") {
         detail = `<div class="meta">Fichier modifié : <b>${esc(c.chemin_complet || c.fichier)}</b>${c.rechargement ? ` · puis rechargement ${esc(c.rechargement)}` : ""}</div>
-          <div class="meta">Remplacer :</div><pre class="moins">${esc(c.rechercher)}</pre>
-          <div class="meta">Par :</div><pre class="plus">${esc(c.remplacer)}</pre>`;
+          <div class="meta">Remplacer (· = un espace) :</div><pre class="moins">${espaces(c.rechercher)}</pre>
+          <div class="meta">Par :</div><pre class="plus">${espaces(c.remplacer)}</pre>`;
       } else if (c.type === "appel_service") {
         detail = `<pre>${esc(c.domaine)}.${esc(c.service)} ${esc(JSON.stringify(c.donnees || {}))}</pre>`;
       } else if (c.type === "recharger_integration") {

@@ -97,6 +97,8 @@ def normaliser(res: dict[str, Any]) -> dict[str, Any]:
     donnees = correctif.get("donnees")
     correctif["donnees"] = donnees if isinstance(donnees, dict) else {}
     correctif["type"] = str(correctif.get("type") or "aucun")
+    correctif.pop("local", None)
+    correctif.pop("actions", None)
     for cle in ("domaine", "service", "fichier", "rechercher", "remplacer", "rechargement"):
         val = correctif.get(cle)
         correctif[cle] = "" if val is None else str(val)
