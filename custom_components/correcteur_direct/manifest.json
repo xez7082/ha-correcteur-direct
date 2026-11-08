@@ -9,6 +9,10 @@
     "system_log",
     "websocket_api"
   ],
+  "categories": [
+    "computers_network.monitoring",
+    "ai_voice.ai_models"
+  ],
   "codeowners": [
     "@xez7082"
   ],
