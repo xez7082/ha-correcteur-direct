@@ -17,6 +17,10 @@ class MistralErreur(Exception):
 class MistralQuota(MistralErreur):
     """Limite de débit atteinte (HTTP 429)."""
 
+    def __init__(self, message: str, attente: float | None = None) -> None:
+        super().__init__(message)
+        self.attente = attente
+
 
 class MistralCleInvalide(MistralErreur):
     """Clé API refusée."""
@@ -128,7 +132,12 @@ async def analyser(
             timeout=aiohttp.ClientTimeout(total=90),
         ) as rep:
             if rep.status == 429:
-                raise MistralQuota("Limite Mistral atteinte")
+                attente = None
+                try:
+                    attente = float(rep.headers.get("Retry-After", ""))
+                except ValueError:
+                    pass
+                raise MistralQuota("Limite Mistral atteinte", attente)
             if rep.status in (401, 403):
                 raise MistralCleInvalide("Clé API Mistral refusée")
             if rep.status >= 400:

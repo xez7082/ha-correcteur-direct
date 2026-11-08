@@ -72,8 +72,8 @@ def _termes(hass: HomeAssistant, probleme: dict[str, Any]) -> tuple[list[str], l
     for m in RE_GUILLEMETS.finditer(probleme.get("message", "")):
         val = m.group(1).strip()
         # un mot isolé (« template », « sensor ») ferait remonter des fichiers sans rapport
-        if re.fullmatch(r"[a-z0-9_]+", val):
-            continue
+        if re.fullmatch(r"[a-z0-9_]+", val) or any(c in val for c in "{}()|%"):
+            continue  # mot isolé ou morceau de modèle : trouverait n'importe quel fichier
         if val and not val.startswith(("/", "http")) and len(termes) < 12:
             termes.append(val)
 

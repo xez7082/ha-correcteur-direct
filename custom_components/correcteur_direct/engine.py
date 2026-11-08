@@ -150,6 +150,7 @@ class Moteur:
         self.niveau = logging.ERROR
         self.cle_invalide = False
         self.pause_jusqua = 0.0
+        self.intervalle = 2.0  # secondes entre deux appels, s'adapte aux refus de Mistral
         self._ecouteur: _Ecouteur | None = None
         self._tache: asyncio.Task | None = None
         self._desabonner: list = []
@@ -282,6 +283,20 @@ class Moteur:
         self._purger()
         self._mettre_en_file(pb)
         self._maj()
+        self.hass.async_create_task(self._localiser(pb["id"]))
+
+    async def _localiser(self, iid: str) -> None:
+        """Retrouve les fichiers concernés tout de suite, sans attendre l'IA."""
+        pb = self.problemes.get(iid)
+        if not pb or pb.get("fichiers"):
+            return
+        try:
+            ctx = await collecter_contexte(self.hass, pb)
+        except Exception:  # noqa: BLE001
+            return
+        if not pb.get("fichiers"):
+            pb["fichiers"] = ctx.get("fichiers", [])
+            self._maj()
 
     def _reanalysable(self, pb: dict[str, Any]) -> bool:
         return _age_s(pb.get("analyse_le")) > float(self.opts[CONF_COOLDOWN]) * 3600
@@ -372,7 +387,7 @@ class Moteur:
                 pb["statut"] = ST_ERREUR_IA
                 pb["erreur"] = f"Erreur interne : {err}"[:300]
             self._maj()
-            await asyncio.sleep(2)  # espace les appels (limite Mistral par seconde)
+            await asyncio.sleep(self.intervalle)
 
     def _construire_texte(self, pb: dict[str, Any], ctx: dict[str, Any]) -> str:
         parties = [
@@ -444,14 +459,17 @@ class Moteur:
         session = async_get_clientsession(self.hass)
         try:
             res = await analyser(session, opts[CONF_API_KEY], opts[CONF_MODEL], texte)
-        except MistralQuota:
+        except MistralQuota as err:
+            self.appels.pop() if self.appels else None  # refusé : ne compte pas
+            self.intervalle = min(120.0, self.intervalle * 2)
+            attente = int(max(err.attente or 0, self.intervalle * 2, 10))
             pb["statut"] = ST_QUOTA
             pb["erreur"] = (
-                "Mistral demande de ralentir (limite de l'offre gratuite). "
-                "Nouvel essai dans 1 min."
+                "Mistral demande de ralentir (limite de votre offre). "
+                f"Nouvel essai dans {attente} s, puis un appel toutes les {int(self.intervalle)} s."
             )
-            self.pause_jusqua = time.monotonic() + 60
-            self._reprendre_plus_tard(pb["id"], 60)
+            self.pause_jusqua = time.monotonic() + attente
+            self._reprendre_plus_tard(pb["id"], attente)
             return
         except MistralCleInvalide as err:
             self.cle_invalide = True
@@ -469,6 +487,7 @@ class Moteur:
                  "correctif": pb["analyse"].get("correctif", {}).get("type")}
             )
             pb["historique"] = pb["historique"][-5:]
+        self.intervalle = max(2.0, self.intervalle * 0.8)  # ça passe : on réaccélère doucement
         pb["analyse"] = res
         pb["analyse_le"] = _maintenant()
         pb.pop("erreur", None)
