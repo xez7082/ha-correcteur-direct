@@ -13,6 +13,11 @@ from .const import DOSSIERS_EXCLUS, FICHIERS_EXCLUS
 RE_ENTITE = re.compile(r"\b([a-z][a-z0-9_]*)\.([a-z0-9][a-z0-9_]*)\b")
 RE_TEMPLATE = re.compile(r"(?:rendering|template|Template)\s*'(.{6,600}?)'(?:\s|$|:|,)", re.S)
 RE_GUILLEMETS = re.compile(r"['\"]([^'\"\n]{6,80})['\"]")
+# Chemins cités par Home Assistant : « /config/packages/x.yaml, line 12 »
+RE_CHEMIN = re.compile(
+    r"(/(?:config|homeassistant)/[^\s,'\"()\]]+\.ya?ml)(?:\"?,?\s*(?:line|ligne)\s*(\d+))?",
+    re.I,
+)
 RE_LOGGER = re.compile(r"^(?:homeassistant\.components|custom_components)\.([a-z0-9_]+)")
 
 TAILLE_MAX_FICHIER = 600_000
@@ -62,6 +67,9 @@ def _termes(hass: HomeAssistant, probleme: dict[str, Any]) -> tuple[list[str], l
             termes.append(max(lignes, key=len)[:70])
     for m in RE_GUILLEMETS.finditer(probleme.get("message", "")):
         val = m.group(1).strip()
+        # un mot isolé (« template », « sensor ») ferait remonter des fichiers sans rapport
+        if re.fullmatch(r"[a-z0-9_]+", val):
+            continue
         if val and not val.startswith(("/", "http")) and len(termes) < 12:
             termes.append(val)
 
@@ -118,6 +126,7 @@ def _chercher(racine: Path, termes: list[str]) -> list[dict[str, Any]]:
                 extraits.append(
                     {
                         "fichier": rel,
+                        "ligne": i + 1,
                         "debut": debut + 1,
                         "fin": fin,
                         "texte": "\n".join(lignes[debut:fin])[:3000],
@@ -153,7 +162,23 @@ async def collecter_contexte(hass: HomeAssistant, probleme: dict[str, Any]) -> d
         for entree in hass.config_entries.async_entries(integration):
             entrees.append({"titre": entree.title, "etat": str(entree.state.value)})
 
+    # Fichiers concernés : d'abord ceux cités par l'erreur, puis ceux trouvés par recherche
+    fichiers: list[dict[str, Any]] = []
+    texte = f"{probleme.get('message', '')}\n{probleme.get('exception') or ''}"
+    for m in RE_CHEMIN.finditer(texte):
+        chemin = m.group(1)
+        if chemin.startswith("/homeassistant/"):
+            chemin = str(racine / chemin.removeprefix("/homeassistant/"))
+        ligne = int(m.group(2)) if m.group(2) else None
+        if not any(f["chemin"] == chemin for f in fichiers):
+            fichiers.append({"chemin": chemin, "ligne": ligne, "origine": "cité par l'erreur"})
+    for x in extraits:
+        chemin = str(racine / x["fichier"])
+        if not any(f["chemin"] == chemin for f in fichiers):
+            fichiers.append({"chemin": chemin, "ligne": x["ligne"], "origine": "trouvé par recherche"})
+
     return {
+        "fichiers": fichiers[:6],
         "integration": integration,
         "entrees": entrees,
         "etats": etats,

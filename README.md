@@ -14,20 +14,23 @@ avec **Mistral AI**, dès qu'elles apparaissent, sans attendre une analyse progr
    à 14 h 03 min 12 s est captée à 14 h 03 min 12 s.
 2. **Regroupement** : une même erreur répétée 500 fois = un seul problème, une seule analyse IA
    (les nombres et horodatages sont ignorés pour reconnaître les doublons).
-3. **Contexte automatique** : les entités citées et les extraits YAML concernés (`packages/`,
+3. **Fichier en cause affiché en entier** : chemin complet et numéro de ligne
+   (ex. `/config/packages/energie.yaml — ligne 4`), dans le panneau, les notifications et
+   l'attribut `fichier` du capteur « Dernière erreur ».
+4. **Contexte automatique** : les entités citées et les extraits YAML concernés (`packages/`,
    `automations.yaml`, `templates.yaml`…) sont retrouvés et envoyés avec l'erreur.
-4. **Masquage local** avant tout envoi : mots de passe, jetons, clés API, adresses IP et MAC,
+5. **Masquage local** avant tout envoi : mots de passe, jetons, clés API, adresses IP et MAC,
    e-mails, coordonnées GPS. `secrets.yaml` et `.storage/` ne sont jamais lus.
-5. **Correction mixte** :
+6. **Correction mixte** :
    | Type de correctif | Par défaut |
    |---|---|
    | Recharger une intégration ou un domaine YAML (`template.reload`…) | ✅ automatique |
    | Modifier un fichier YAML | 🔔 notification avec bouton **Appliquer** (automatique en option) |
    | Redémarrer Home Assistant | 🔔 jamais automatique |
-6. **Vérification et retour arrière** : après chaque correction, l'erreur est surveillée pendant
+7. **Vérification et retour arrière** : après chaque correction, l'erreur est surveillée pendant
    2 minutes. Si elle revient, le fichier sauvegardé est remis en place automatiquement
    et le problème passe en « Échec ».
-7. **Contrôle de configuration** : après toute modification de fichier, la configuration est
+8. **Contrôle de configuration** : après toute modification de fichier, la configuration est
    vérifiée. Si la modification ajoute une erreur, le fichier est restauré immédiatement.
 
 ## Installation

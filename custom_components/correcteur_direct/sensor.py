@@ -79,6 +79,7 @@ class CapteurProblemes(_Base):
                     "gravite": (p.get("analyse") or {}).get("gravite"),
                     "statut": p["statut"],
                     "occurrences": p["occurrences"],
+                    "fichier": (p.get("fichiers") or [{}])[0].get("chemin"),
                 }
                 for p in ouverts[:10]
             ],
@@ -132,6 +133,9 @@ class CapteurDerniere(_Base):
             "statut": pb["statut"],
             "gravite": a.get("gravite"),
             "integration": pb["nom"],
+            "fichier": (pb.get("fichiers") or [{}])[0].get("chemin"),
+            "ligne": (pb.get("fichiers") or [{}])[0].get("ligne"),
+            "fichiers": [f["chemin"] for f in pb.get("fichiers") or []],
             "cause": a.get("cause"),
             "correctif": a.get("explication"),
             "vue_le": pb["dernier"],

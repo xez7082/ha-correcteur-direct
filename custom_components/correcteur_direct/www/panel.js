@@ -145,6 +145,9 @@ class CorrecteurDirectPanel extends HTMLElement {
         pre.moins { border-color:#f87171; } pre.plus { border-color:#4ade80; }
         details summary { cursor:pointer; min-height:48px; display:flex; align-items:center; font-weight:600; color:#38bdf8; font-size:17px; }
         .actions { display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; }
+        .fichiers { margin-top:10px; padding:10px 14px; background:#020617; border:2px solid #38bdf8; border-radius:10px; }
+        .fichiers div { font:16px/1.5 ui-monospace, Consolas, monospace; word-break:break-all; }
+        .fichiers small { font-family:system-ui, sans-serif; font-size:14px; color:#94a3b8; }
         .vide { text-align:center; color:#cbd5e1; padding:50px 10px; font-size:19px; }
         .alerte { margin:12px 18px 0; padding:14px 16px; border:2px solid #f87171; border-radius:14px; background:#450a0a; }
         .message { position:fixed; left:50%; bottom:24px; transform:translateX(-50%); background:#0369a1; border:2px solid #38bdf8;
@@ -242,7 +245,7 @@ class CorrecteurDirectPanel extends HTMLElement {
     if (c.type && c.type !== "aucun") {
       let detail = "";
       if (c.type === "modif_fichier") {
-        detail = `<div class="meta">Fichier : <b>${esc(c.fichier)}</b>${c.rechargement ? ` · puis rechargement ${esc(c.rechargement)}` : ""}</div>
+        detail = `<div class="meta">Fichier modifié : <b>${esc(c.chemin_complet || c.fichier)}</b>${c.rechargement ? ` · puis rechargement ${esc(c.rechargement)}` : ""}</div>
           <div class="meta">Remplacer :</div><pre class="moins">${esc(c.rechercher)}</pre>
           <div class="meta">Par :</div><pre class="plus">${esc(c.remplacer)}</pre>`;
       } else if (c.type === "appel_service") {
@@ -279,11 +282,15 @@ class CorrecteurDirectPanel extends HTMLElement {
       </div>
       <div class="titre">${esc(titre)}</div>
       <div class="meta">${esc(p.nom)} · ${p.occurrences} occurrence(s) · vue <span data-iso="${esc(p.dernier)}">${ilYa(p.dernier)}</span></div>
+      ${(p.fichiers || []).length ? `<div class="fichiers">${p.fichiers.map((f) =>
+        `<div>📄 ${esc(f.chemin)}${f.ligne ? ` — <b>ligne ${f.ligne}</b>` : ""} <small>(${esc(f.origine)})</small></div>`).join("")}</div>`
+        : (p.analyse ? `<div class="meta bloc">📄 Aucun fichier YAML concerné (configuration faite par l'interface ou intégration)</div>` : "")}
       ${p.erreur ? `<div class="bloc" style="color:#fca5a5">⚠️ ${esc(p.erreur)}</div>` : ""}
       ${a.cause ? `<div class="bloc"><h3>Cause</h3><div>${esc(a.cause)}</div></div>` : ""}
       ${correctif}
       <details data-cle="${p.id}-msg" ${ouvert("msg")}><summary>Message d'origine</summary>
         <pre>${esc(p.message)}</pre>${p.exception ? `<pre>${esc(p.exception)}</pre>` : ""}
+        <div class="meta">Code Home Assistant concerné : ${esc(p.source)}</div>
         <div class="meta">Identifiant : ${p.id}${p.retour_arriere?.sauvegarde ? ` · sauvegarde : ${esc(p.retour_arriere.sauvegarde)}` : ""}</div>
       </details>
       <div class="actions">${actions.join("")}</div>

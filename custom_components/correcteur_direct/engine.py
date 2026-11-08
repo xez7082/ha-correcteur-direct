@@ -410,7 +410,7 @@ class Moteur:
         self._maj()
         ctx = await collecter_contexte(self.hass, pb)
         texte = self._construire_texte(pb, ctx)
-        pb["contexte_fichiers"] = [x["fichier"] for x in ctx.get("extraits", [])]
+        pb["fichiers"] = ctx.get("fichiers", [])
 
         self.appels.append(time.monotonic())
         self.stats["appels_ia"] += 1
@@ -442,6 +442,10 @@ class Moteur:
         pb.pop("erreur", None)
 
         correctif = res["correctif"]
+        if correctif["type"] == "modif_fichier" and correctif["fichier"]:
+            correctif["chemin_complet"] = str(
+                self.correcteur.racine / correctif["fichier"].lstrip("/")
+            )
         if correctif["type"] == "aucun":
             pb["statut"] = ST_SANS
             if res["gravite"] == "critique":
@@ -612,6 +616,12 @@ class Moteur:
         a = pb.get("analyse") or {}
         titre = f"🔧 {a.get('resume') or 'Erreur Home Assistant'}"
         lignes = []
+        fichiers = pb.get("fichiers") or []
+        if fichiers:
+            f = fichiers[0]
+            lignes.append(
+                f"**Fichier :** `{f['chemin']}`" + (f" — ligne {f['ligne']}" if f.get("ligne") else "")
+            )
         if a.get("cause"):
             lignes.append(f"**Cause :** {a['cause']}")
         if a.get("explication"):
@@ -642,6 +652,10 @@ class Moteur:
             ]
         a = pb.get("analyse") or {}
         message = a.get("explication") or a.get("cause") or pb.get("erreur") or pb["message"]
+        fichiers = pb.get("fichiers") or []
+        if fichiers:
+            f = fichiers[0]
+            message = f"📄 {f['chemin']}" + (f" (ligne {f['ligne']})" if f.get("ligne") else "") + f"\n{message}"
         self.hass.async_create_task(
             self.hass.services.async_call(
                 "notify", service,
