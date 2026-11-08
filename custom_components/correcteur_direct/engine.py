@@ -162,6 +162,7 @@ class Moteur:
         self.niveau = logging.ERROR
         self.cle_invalide = False
         self.pause_jusqua = 0.0
+        self.derniere_erreur_ia: dict[str, Any] | None = None
         self.verrou_yaml = asyncio.Lock()
         self.intervalle = 2.0  # secondes entre deux appels, s'adapte aux refus de Mistral
         self._ecouteur: _Ecouteur | None = None
@@ -189,6 +190,10 @@ class Moteur:
             self.problemes[pb["id"]] = pb
             self.par_sig[pb["sig"]] = pb["id"]
 
+        for pb in self.problemes.values():
+            if pb.get("type") != "yaml":
+                pb.pop("fichiers", None)  # recalculés avec la recherche actuelle
+
         self.niveau = logging.WARNING if self.opts[CONF_LEVEL] == "WARNING" else logging.ERROR
         self._ecouteur = _Ecouteur(self)
         logging.getLogger().addHandler(self._ecouteur)
@@ -203,6 +208,13 @@ class Moteur:
         @callback
         def _balayage_differe(_now: Any) -> None:
             self.hass.async_create_task(self.balayer())
+
+        @callback
+        def _relocaliser(_now: Any) -> None:
+            for iid in list(self.problemes):
+                self.hass.async_create_task(self._localiser(iid))
+
+        self._desabonner.append(async_call_later(self.hass, 5, _relocaliser))
 
         if self.hass.is_running:
             self._desabonner.append(async_call_later(self.hass, 20, _balayage_differe))
@@ -490,13 +502,14 @@ class Moteur:
         try:
             res = await analyser(session, opts[CONF_API_KEY], opts[CONF_MODEL], texte)
         except MistralQuota as err:
+            self.derniere_erreur_ia = {"le": _maintenant(), "message": str(err)}
             self.appels.pop() if self.appels else None  # refusé : ne compte pas
             self.intervalle = min(120.0, self.intervalle * 2)
             attente = int(max(err.attente or 0, self.intervalle * 2, 10))
             pb["statut"] = ST_QUOTA
             pb["erreur"] = (
-                "Mistral demande de ralentir (limite de votre offre). "
-                f"Nouvel essai dans {attente} s, puis un appel toutes les {int(self.intervalle)} s."
+                f"{err} — nouvel essai dans {attente} s, puis un appel toutes les "
+                f"{int(self.intervalle)} s."
             )
             self.pause_jusqua = time.monotonic() + attente
             self._reprendre_plus_tard(pb["id"], attente)
@@ -507,8 +520,9 @@ class Moteur:
             pb["erreur"] = str(err)
             return
         except MistralErreur as err:
+            self.derniere_erreur_ia = {"le": _maintenant(), "message": str(err)}
             pb["statut"] = ST_ERREUR_IA
-            pb["erreur"] = str(err)[:300]
+            pb["erreur"] = str(err)[:400]
             return
 
         if pb.get("analyse"):
@@ -518,6 +532,7 @@ class Moteur:
             )
             pb["historique"] = pb["historique"][-5:]
         self.intervalle = max(2.0, self.intervalle * 0.8)  # ça passe : on réaccélère doucement
+        self.derniere_erreur_ia = None
         pb["analyse"] = res
         pb["analyse_le"] = _maintenant()
         pb.pop("erreur", None)
@@ -936,4 +951,10 @@ class Moteur:
                 "delai_verification": int(opts[CONF_VERIFY_DELAY]),
             },
             "cle_invalide": self.cle_invalide,
+            "ia": {
+                "pause_restante": max(0, int(self.pause_jusqua - time.monotonic())),
+                "intervalle": int(self.intervalle),
+                "en_file": sum(1 for p in self.problemes.values() if p["statut"] == ST_FILE),
+                "derniere_erreur": self.derniere_erreur_ia,
+            },
         }

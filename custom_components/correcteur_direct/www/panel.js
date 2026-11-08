@@ -141,7 +141,7 @@ class CorrecteurDirectPanel extends HTMLElement {
         /* Corps : liste | détail */
         main { display:grid; grid-template-columns:minmax(300px, 40%) 1fr; min-height:0; }
         #liste { overflow-y:auto; border-right:2px solid #24344d; padding:8px; display:flex; flex-direction:column; gap:6px; }
-        .ligne { display:grid; grid-template-columns:8px 1fr auto; gap:10px; align-items:center; text-align:left;
+        .ligne { flex-shrink:0; display:grid; grid-template-columns:8px 1fr auto; gap:10px; align-items:center; text-align:left;
           min-height:64px; padding:8px 10px 8px 0; border-radius:12px; background:#111c30; font-weight:400; white-space:normal; }
         .ligne[aria-current="true"] { border-color:#38bdf8; background:#13233d; }
         .barre { align-self:stretch; border-radius:12px 0 0 12px; }
@@ -149,6 +149,7 @@ class CorrecteurDirectPanel extends HTMLElement {
         .sous { font-size:14px; color:#cbd5e1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
         .statut { font-size:14px; font-weight:700; padding:3px 10px; border-radius:999px; border:2px solid currentColor; white-space:nowrap; }
         .resume { min-width:0; }
+        .raison { color:#fca5a5; }
 
         #detail { overflow-y:auto; padding:14px 18px; }
         #detail h2 { font-size:20px; margin:4px 0 8px; }
@@ -168,7 +169,7 @@ class CorrecteurDirectPanel extends HTMLElement {
         details summary { cursor:pointer; min-height:48px; display:flex; align-items:center; color:#38bdf8; font-weight:600; }
         .vide { text-align:center; color:#cbd5e1; padding:40px 10px; font-size:17px; }
         #retour { display:none; }
-        .bandeau { padding:10px 14px; margin:8px 12px 0; border:2px solid #f87171; border-radius:12px; background:#450a0a; }
+        .bandeau { padding:10px 14px; margin:8px 12px 0; border:2px solid #fbbf24; border-radius:12px; background:#422006; font-size:15px; }
 
         .toast { position:fixed; left:50%; bottom:20px; transform:translateX(-50%); background:#0369a1; border:2px solid #38bdf8;
           padding:12px 20px; border-radius:12px; font-size:16px; white-space:pre-line; opacity:0; pointer-events:none;
@@ -261,8 +262,17 @@ class CorrecteurDirectPanel extends HTMLElement {
       [`${s.appels_derniere_heure || 0}/${d.options.appels_max_heure}`, "IA / h"],
     ].map(([v, l]) => `<div class="chiffre"><b>${esc(v)}</b>${esc(l)}</div>`).join("");
 
-    r.getElementById("bandeau").innerHTML = d.cle_invalide
-      ? `<div class="bandeau">⚠️ Clé Mistral refusée : Paramètres → Appareils et services → Correcteur en direct → Configurer.</div>` : "";
+    const ia = d.ia || {};
+    const minutes = (sec) => sec >= 60 ? `${Math.floor(sec / 60)} min ${sec % 60} s` : `${sec} s`;
+    let bandeau = "";
+    if (d.cle_invalide) {
+      bandeau = `<div class="bandeau">⚠️ Clé Mistral refusée : Paramètres → Appareils et services → Correcteur en direct → Configurer.</div>`;
+    } else if (ia.derniere_erreur && (ia.pause_restante > 0 || ia.en_file > 0)) {
+      bandeau = `<div class="bandeau">⏸️ <b>Analyses IA ralenties</b> — ${ia.en_file} en attente` +
+        (ia.pause_restante > 0 ? ` · reprise dans ${minutes(ia.pause_restante)}` : "") +
+        ` · un appel toutes les ${ia.intervalle} s<br>${esc(ia.derniere_erreur.message)}</div>`;
+    }
+    r.getElementById("bandeau").innerHTML = bandeau;
 
     r.getElementById("onglets").innerHTML = ONGLETS.map(([cle, nom, sts]) =>
       `<button data-onglet="${cle}" aria-selected="${cle === this._onglet}">${nom} (${compte(sts)})</button>`).join("");
@@ -283,7 +293,8 @@ class CorrecteurDirectPanel extends HTMLElement {
       return `<button class="ligne" data-choix="${p.id}" aria-current="${p.id === this._choisi}">
         <span class="barre" style="background:${grCoul}"></span>
         <span class="resume"><div class="titre">${esc(a.resume || p.message.split("\n")[0])}</div>
-          <div class="sous">${esc(ou)} · ${p.occurrences}× · <span data-iso="${esc(p.dernier)}">${ilYa(p.dernier)}</span></div></span>
+          <div class="sous">${esc(ou)} · ${p.occurrences}× · <span data-iso="${esc(p.dernier)}">${ilYa(p.dernier)}</span></div>
+          ${["quota", "erreur_ia", "échec"].includes(p.statut) && p.erreur ? `<div class="sous raison">⚠️ ${esc(p.erreur)}</div>` : ""}</span>
         <span class="statut" style="color:${stCoul}">${stNom}</span>
       </button>`;
     }).join("") : `<div class="vide">${this._onglet === "traiter" ? "✅ Aucune erreur à traiter.<br>Le journal est surveillé en direct." : "Rien ici."}</div>`;

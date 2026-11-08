@@ -67,6 +67,28 @@ Règles impératives :
 """
 
 
+def _explication(statut: int, corps: str) -> str:
+    """Traduit la réponse d'erreur de Mistral en phrase claire, avec son message d'origine."""
+    try:
+        d = json.loads(corps)
+        brut = d.get("message") or d.get("detail") or d.get("error") or corps
+        if isinstance(brut, dict):
+            brut = brut.get("message") or str(brut)
+    except (ValueError, AttributeError):
+        brut = corps
+    brut = " ".join(str(brut).split())[:220]
+    bas = brut.lower()
+    if statut == 402 or any(m in bas for m in ("credit", "billing", "payment", "quota exceeded", "monthly")):
+        cause = "Votre compte Mistral n'a plus de crédit ou d'accès API (offre gratuite épuisée ?)"
+    elif "capacity" in bas or "service tier" in bas:
+        cause = "Mistral est saturé pour ce modèle"
+    elif "token" in bas:
+        cause = "Trop de texte envoyé par minute pour votre offre Mistral"
+    else:
+        cause = "Trop d'appels pour votre offre Mistral"
+    return f"{cause}. Réponse de Mistral : « {brut} »"
+
+
 def _extraire_json(contenu: str) -> dict[str, Any]:
     try:
         return json.loads(contenu)
@@ -139,7 +161,9 @@ async def analyser(
                     attente = float(rep.headers.get("Retry-After", ""))
                 except ValueError:
                     pass
-                raise MistralQuota("Limite Mistral atteinte", attente)
+                raise MistralQuota(_explication(429, await rep.text()), attente)
+            if rep.status == 402:
+                raise MistralErreur(_explication(402, await rep.text()))
             if rep.status in (401, 403):
                 raise MistralCleInvalide("Clé API Mistral refusée")
             if rep.status >= 400:
