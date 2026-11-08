@@ -49,6 +49,8 @@ async def async_setup_entry(hass: HomeAssistant, entree: CorrecteurConfigEntry) 
         )
     except ValueError:
         pass  # panneau déjà présent
+    except Exception as err:  # noqa: BLE001 - le panneau ne doit jamais bloquer l'intégration
+        _LOGGER.warning("Panneau Correcteur non installé : %s", err)
 
     await hass.config_entries.async_forward_entry_setups(entree, PLATFORMS)
     entree.async_on_unload(entree.add_update_listener(_options_modifiees))

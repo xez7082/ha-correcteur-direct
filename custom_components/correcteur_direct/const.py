@@ -3,7 +3,7 @@ from __future__ import annotations
 
 DOMAIN = "correcteur_direct"
 NOM = "Correcteur en direct"
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 # Options
 CONF_API_KEY = "api_key"

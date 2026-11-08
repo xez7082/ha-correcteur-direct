@@ -44,12 +44,10 @@ ENTIERS = (CONF_MAX_CALLS, CONF_VERIFY_DELAY, CONF_COOLDOWN, CONF_MIN_CONFIDENCE
 
 
 def _nombre(mini: int, maxi: int, pas: int = 1, unite: str | None = None) -> NumberSelector:
-    return NumberSelector(
-        NumberSelectorConfig(
-            min=mini, max=maxi, step=pas, mode=NumberSelectorMode.BOX,
-            unit_of_measurement=unite,
-        )
-    )
+    config = NumberSelectorConfig(min=mini, max=maxi, step=pas, mode=NumberSelectorMode.BOX)
+    if unite:  # une unité vide est refusée par Home Assistant
+        config["unit_of_measurement"] = unite
+    return NumberSelector(config)
 
 
 def _schema(v: dict[str, Any]) -> vol.Schema:
