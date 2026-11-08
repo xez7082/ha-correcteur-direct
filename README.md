@@ -8,6 +8,9 @@ avec **Mistral AI**, dès qu'elles apparaissent, sans attendre une analyse progr
 
 ![Panneau Correcteur](images/panneau.png)
 
+Le panneau tient sur un seul écran : liste des erreurs à gauche, détail et boutons à droite.
+Sur une tablette en portrait, la liste occupe l'écran et le détail s'ouvre d'un appui (bouton « ← Liste » pour revenir).
+
 ## Ce que ça fait
 
 1. **Détection instantanée** : l'intégration s'abonne au journal de Home Assistant. Une erreur écrite
