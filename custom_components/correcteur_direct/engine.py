@@ -90,6 +90,7 @@ def signature(nom: str, message: str) -> str:
     (« Error while executing automation… » et « …: Error executing script… ») :
     on ne garde que le cœur de l'erreur pour les regrouper.
     """
+    message = (message or "").strip().split("\n", 1)[0]
     coeur = RE_COEUR.search(message)
     if coeur:
         message = coeur.group(1)
@@ -148,6 +149,7 @@ class Moteur:
         self.correcteur = Correcteur(hass)
         self.niveau = logging.ERROR
         self.cle_invalide = False
+        self.pause_jusqua = 0.0
         self._ecouteur: _Ecouteur | None = None
         self._tache: asyncio.Task | None = None
         self._desabonner: list = []
@@ -194,11 +196,13 @@ class Moteur:
 
             @callback
             def _demarre(_ev: Event) -> None:
+                # l'écouteur « une fois » s'est retiré tout seul : on l'oublie
+                if desab in self._desabonner:
+                    self._desabonner.remove(desab)
                 self._desabonner.append(async_call_later(self.hass, 180, _balayage_differe))
 
-            self._desabonner.append(
-                self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _demarre)
-            )
+            desab = self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _demarre)
+            self._desabonner.append(desab)
 
     async def async_arreter(self) -> None:
         if self._ecouteur:
@@ -357,6 +361,9 @@ class Moteur:
             pb = self.problemes.get(iid)
             if not pb or pb["statut"] != ST_FILE:
                 continue
+            attente = self.pause_jusqua - time.monotonic()
+            if attente > 0:
+                await asyncio.sleep(attente)
             try:
                 await self._traiter(pb)
             except asyncio.CancelledError:
@@ -365,7 +372,7 @@ class Moteur:
                 pb["statut"] = ST_ERREUR_IA
                 pb["erreur"] = f"Erreur interne : {err}"[:300]
             self._maj()
-            await asyncio.sleep(1)
+            await asyncio.sleep(2)  # espace les appels (limite Mistral par seconde)
 
     def _construire_texte(self, pb: dict[str, Any], ctx: dict[str, Any]) -> str:
         parties = [
@@ -419,6 +426,10 @@ class Moteur:
             return
         if not self._quota_ok():
             pb["statut"] = ST_QUOTA
+            pb["erreur"] = (
+                f"Limite réglée atteinte ({int(opts[CONF_MAX_CALLS])} appels/heure). "
+                "Nouvel essai dans 5 min — vous pouvez augmenter la limite dans les réglages."
+            )
             self._reprendre_plus_tard(pb["id"], 300)
             return
 
@@ -435,7 +446,12 @@ class Moteur:
             res = await analyser(session, opts[CONF_API_KEY], opts[CONF_MODEL], texte)
         except MistralQuota:
             pb["statut"] = ST_QUOTA
-            self._reprendre_plus_tard(pb["id"], 900)
+            pb["erreur"] = (
+                "Mistral demande de ralentir (limite de l'offre gratuite). "
+                "Nouvel essai dans 1 min."
+            )
+            self.pause_jusqua = time.monotonic() + 60
+            self._reprendre_plus_tard(pb["id"], 60)
             return
         except MistralCleInvalide as err:
             self.cle_invalide = True
