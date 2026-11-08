@@ -1,0 +1,15 @@
+{
+  "domain": "correcteur_direct",
+  "name": "Correcteur en direct (Mistral)",
+  "after_dependencies": ["mobile_app", "system_log"],
+  "codeowners": ["@xez7082"],
+  "config_flow": true,
+  "dependencies": ["http", "frontend", "panel_custom", "persistent_notification", "websocket_api"],
+  "documentation": "https://github.com/xez7082/ha-correcteur-direct",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/xez7082/ha-correcteur-direct/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "1.0.0"
+}

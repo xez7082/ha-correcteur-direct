@@ -1,0 +1,34 @@
+analyser_maintenant:
+appliquer_correctif:
+  fields:
+    id:
+      required: true
+      example: "a1b2c3d4e5"
+      selector:
+        text:
+ignorer:
+  fields:
+    id:
+      required: true
+      selector:
+        text:
+reactiver:
+  fields:
+    id:
+      required: true
+      selector:
+        text:
+reanalyser:
+  fields:
+    id:
+      required: true
+      selector:
+        text:
+annuler_correctif:
+  fields:
+    id:
+      required: true
+      selector:
+        text:
+vider_historique:
+tester:

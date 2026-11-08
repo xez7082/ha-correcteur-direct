@@ -1,0 +1,141 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Correcteur en direct (Mistral)",
+        "description": "Surveille le journal Home Assistant en direct et corrige les erreurs avec Mistral AI. Les mots de passe, jetons et adresses IP sont masqués avant tout envoi.",
+        "data": {
+          "api_key": "Clé API Mistral",
+          "modele": "Modèle Mistral",
+          "niveau": "Niveau surveillé",
+          "auto_services": "Corriger automatiquement par rechargement",
+          "auto_fichiers": "Corriger automatiquement les fichiers YAML",
+          "confiance_min": "Confiance minimale pour l'automatique",
+          "service_notification": "Service de notification mobile (facultatif)",
+          "appels_max_heure": "Appels IA maximum par heure",
+          "delai_verification": "Durée de vérification après correction",
+          "delai_reanalyse_h": "Délai avant de réanalyser une même erreur"
+        },
+        "data_description": {
+          "api_key": "Clé gratuite sur console.mistral.ai → API Keys",
+          "modele": "mistral-small-latest suffit dans la plupart des cas",
+          "niveau": "Erreurs seules, ou erreurs + avertissements (plus d'appels à l'IA)",
+          "auto_services": "Recharger une intégration ou un domaine YAML sans demander",
+          "auto_fichiers": "Modifier un fichier sans demander (sauvegarde + vérification + retour arrière). Désactivé = notification avec bouton Appliquer",
+          "confiance_min": "En dessous, le correctif est proposé mais pas appliqué",
+          "service_notification": "Ex. mobile_app_pixel_8 : notifications avec boutons Appliquer / Ignorer",
+          "appels_max_heure": "Protège votre quota Mistral",
+          "delai_verification": "Si l'erreur revient pendant ce délai, le correctif est annulé",
+          "delai_reanalyse_h": "Évite de redemander à l'IA pour une erreur déjà analysée"
+        }
+      }
+    },
+    "error": {
+      "cle_invalide": "Clé API Mistral refusée",
+      "injoignable": "Impossible de joindre Mistral (connexion internet ?)"
+    },
+    "abort": {
+      "already_configured": "Déjà configuré",
+      "single_instance_allowed": "Une seule instance possible"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Réglages du Correcteur",
+        "data": {
+          "api_key": "Clé API Mistral",
+          "modele": "Modèle Mistral",
+          "niveau": "Niveau surveillé",
+          "auto_services": "Corriger automatiquement par rechargement",
+          "auto_fichiers": "Corriger automatiquement les fichiers YAML",
+          "confiance_min": "Confiance minimale pour l'automatique",
+          "service_notification": "Service de notification mobile (facultatif)",
+          "appels_max_heure": "Appels IA maximum par heure",
+          "delai_verification": "Durée de vérification après correction",
+          "delai_reanalyse_h": "Délai avant de réanalyser une même erreur"
+        },
+        "data_description": {
+          "api_key": "Clé gratuite sur console.mistral.ai → API Keys",
+          "modele": "mistral-small-latest suffit dans la plupart des cas",
+          "niveau": "Erreurs seules, ou erreurs + avertissements (plus d'appels à l'IA)",
+          "auto_services": "Recharger une intégration ou un domaine YAML sans demander",
+          "auto_fichiers": "Modifier un fichier sans demander (sauvegarde + vérification + retour arrière). Désactivé = notification avec bouton Appliquer",
+          "confiance_min": "En dessous, le correctif est proposé mais pas appliqué",
+          "service_notification": "Ex. mobile_app_pixel_8 : notifications avec boutons Appliquer / Ignorer",
+          "appels_max_heure": "Protège votre quota Mistral",
+          "delai_verification": "Si l'erreur revient pendant ce délai, le correctif est annulé",
+          "delai_reanalyse_h": "Évite de redemander à l'IA pour une erreur déjà analysée"
+        }
+      }
+    },
+    "error": {
+      "cle_invalide": "Clé API Mistral refusée",
+      "injoignable": "Impossible de joindre Mistral (connexion internet ?)"
+    }
+  },
+  "services": {
+    "analyser_maintenant": {
+      "name": "Analyser maintenant",
+      "description": "Reprend les erreurs déjà présentes dans le journal système"
+    },
+    "appliquer_correctif": {
+      "name": "Appliquer le correctif",
+      "description": "Applique le correctif proposé pour un problème",
+      "fields": {
+        "id": {
+          "name": "Identifiant",
+          "description": "Identifiant du problème (visible dans le panneau)"
+        }
+      }
+    },
+    "ignorer": {
+      "name": "Ignorer",
+      "description": "Ignore définitivement ce type d'erreur",
+      "fields": {
+        "id": {
+          "name": "Identifiant",
+          "description": "Identifiant du problème"
+        }
+      }
+    },
+    "reactiver": {
+      "name": "Réactiver",
+      "description": "Réactive une erreur ignorée et la réanalyse",
+      "fields": {
+        "id": {
+          "name": "Identifiant",
+          "description": "Identifiant du problème"
+        }
+      }
+    },
+    "reanalyser": {
+      "name": "Réanalyser",
+      "description": "Redemande une analyse à Mistral",
+      "fields": {
+        "id": {
+          "name": "Identifiant",
+          "description": "Identifiant du problème"
+        }
+      }
+    },
+    "annuler_correctif": {
+      "name": "Annuler le correctif",
+      "description": "Restaure le fichier sauvegardé avant la correction",
+      "fields": {
+        "id": {
+          "name": "Identifiant",
+          "description": "Identifiant du problème"
+        }
+      }
+    },
+    "vider_historique": {
+      "name": "Vider l'historique",
+      "description": "Efface les problèmes résolus"
+    },
+    "tester": {
+      "name": "Tester",
+      "description": "Écrit une fausse erreur dans le journal pour vérifier la détection en direct"
+    }
+  }
+}
