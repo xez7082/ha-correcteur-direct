@@ -163,6 +163,7 @@ class CorrecteurDirectPanel extends HTMLElement {
         pre.moins { border-color:#f87171; } pre.plus { border-color:#4ade80; }
         .esp { color:#fbbf24; }
         .meta { font-size:14px; color:#cbd5e1; }
+        .multi { white-space:pre-line; }
         .alerte { color:#fca5a5; margin-top:8px; }
         .boutons { display:flex; gap:8px; flex-wrap:wrap; margin:14px 0 6px; position:sticky; bottom:0;
           background:#0f172a; padding:8px 0; }
@@ -346,12 +347,13 @@ class CorrecteurDirectPanel extends HTMLElement {
         <span class="statut" style="color:${grCoul}">${grNom}</span>
         <span class="statut" style="color:${stCoul}">${stNom}</span>
         ${p.auto ? `<span class="statut" style="color:#38bdf8">Automatique</span>` : ""}
+        ${a.local || c.local ? `<span class="statut" style="color:#4ade80">Sans IA</span>` : ""}
       </div>
       <h2>${esc(a.resume || p.message.split("\n")[0])}</h2>
       <div class="meta">${esc(p.nom)} · ${p.occurrences} fois · vue <span data-iso="${esc(p.dernier)}">${ilYa(p.dernier)}</span></div>
       ${fichiers ? `<div class="fichier">${fichiers}</div>` : ""}
       ${p.erreur ? `<div class="alerte">⚠️ ${esc(p.erreur)}</div>` : ""}
-      ${a.cause ? `<h3>Cause</h3><div>${esc(a.cause)}</div>` : ""}
+      ${a.cause ? `<h3>Cause</h3><div class="multi">${esc(a.cause)}</div>` : ""}
       ${correctif}
       <div class="boutons">${actions.join("")}</div>
       <details><summary>Message d'origine</summary>

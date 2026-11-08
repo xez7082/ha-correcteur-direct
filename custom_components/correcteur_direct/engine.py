@@ -56,7 +56,7 @@ from .const import (
 )
 from pathlib import Path
 
-from . import yaml_doctor
+from . import diagnostics_locaux, yaml_doctor
 from .const import FICHIERS_EXCLUS
 from .context import collecter_contexte
 from .fixer import CorrectionErreur, Correcteur
@@ -95,6 +95,9 @@ def signature(nom: str, message: str) -> str:
     on ne garde que le cœur de l'erreur pour les regrouper.
     """
     message = (message or "").strip().split("\n", 1)[0]
+    famille = diagnostics_locaux.cle_regroupement(message)
+    if famille:
+        return hashlib.sha1(f"{nom}|{famille}".encode()).hexdigest()[:16]
     coeur = RE_COEUR.search(message)
     if coeur:
         message = coeur.group(1)
@@ -191,7 +194,7 @@ class Moteur:
             self.par_sig[pb["sig"]] = pb["id"]
 
         for pb in self.problemes.values():
-            if pb.get("type") != "yaml":
+            if pb.get("type") != "yaml" and not (pb.get("analyse") or {}).get("local"):
                 pb.pop("fichiers", None)  # recalculés avec la recherche actuelle
 
         self.niveau = logging.WARNING if self.opts[CONF_LEVEL] == "WARNING" else logging.ERROR
@@ -279,8 +282,17 @@ class Moteur:
 
         iid = self.par_sig.get(sig)
         pb = self.problemes.get(iid) if iid else None
+        nouveaux_ids = [i for _, i, _ in diagnostics_locaux.ids_doubles(d["message"])]
         if pb:
+            if nouveaux_ids:
+                connus = pb.setdefault("ids_doubles", [])
+                ajout = [i for i in nouveaux_ids if i not in connus]
+                if ajout:
+                    connus.extend(ajout)
+                    if pb["statut"] not in (ST_FILE, ST_ANALYSE, ST_IGNORE):
+                        self._mettre_en_file(pb)  # diagnostic local : gratuit
             if balayage:
+                self._maj()
                 return
             pb["occurrences"] += 1
             pb["dernier"] = maintenant
@@ -307,6 +319,7 @@ class Moteur:
             "statut": ST_FILE,
             "analyse": None,
             "historique": [],
+            "ids_doubles": nouveaux_ids,
         }
         self.problemes[pb["id"]] = pb
         self.par_sig[sig] = pb["id"]
@@ -318,7 +331,7 @@ class Moteur:
     async def _localiser(self, iid: str) -> None:
         """Retrouve les fichiers concernés tout de suite, sans attendre l'IA."""
         pb = self.problemes.get(iid)
-        if not pb or pb.get("fichiers"):
+        if not pb or pb.get("fichiers") or (pb.get("analyse") or {}).get("local"):
             return
         try:
             ctx = await collecter_contexte(self.hass, pb)
@@ -465,10 +478,17 @@ class Moteur:
 
     async def _traiter(self, pb: dict[str, Any]) -> None:
         opts = self.opts
-        if not opts.get(CONF_API_KEY) or self.cle_invalide:
-            pb["statut"] = ST_ERREUR_IA
-            pb["erreur"] = "Clé API Mistral absente ou refusée (voir Options de l'intégration)."
+        diag = await self.hass.async_add_executor_job(
+            diagnostics_locaux.diagnostiquer, self.correcteur.racine, pb
+        )
+        if diag:
+            pb["fichiers"] = diag["fichiers"]
+            pb["analyse"] = diag["analyse"]
+            pb["analyse_le"] = _maintenant()
+            pb["statut"] = ST_SANS
+            pb.pop("erreur", None)
             return
+
         if pb.get("type") != "yaml" and yaml_doctor.est_erreur_yaml(
             f"{pb['message']}\n{pb.get('exception') or ''}"
         ):
@@ -481,6 +501,10 @@ class Moteur:
             )
             return
 
+        if not opts.get(CONF_API_KEY) or self.cle_invalide:
+            pb["statut"] = ST_ERREUR_IA
+            pb["erreur"] = "Clé API Mistral absente ou refusée (voir Options de l'intégration)."
+            return
         if not self._quota_ok():
             pb["statut"] = ST_QUOTA
             pb["erreur"] = (

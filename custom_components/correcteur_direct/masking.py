@@ -12,15 +12,17 @@ _REGLES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"), "‹JETON›"),
     # En-tête Authorization
     (re.compile(r"(?i)\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]{8,}"), r"\1 ‹MASQUÉ›"),
-    # clé: valeur / clé=valeur pour les noms sensibles
+    # clé: valeur / clé=valeur pour les noms sensibles, y compris en JSON
+    # ("password": "x", \"password\":\"x\", 'password': 'x', password=x, password: x)
     (
         re.compile(
-            r"(?i)(?<!!)\b(password|passwd|pwd|mot_de_passe|motdepasse|token|access_token|"
-            r"refresh_token|api_key|apikey|api-key|secret|client_secret|private_key|"
-            r"webhook_id|auth|authorization|cle|clé|key)\b(\s*[:=]\s*|\s+)"
-            r"(?!!secret)(['\"]?)([^\s,'\"}\]]+)\3"
+            r"(?i)(?<![!\w])(\\?[\"']?)(password|passwd|pwd|pass|passphrase|mot_de_passe|motdepasse|"
+            r"token|access_token|refresh_token|api_key|apikey|api-key|secret|client_secret|"
+            r"private_key|webhook_id|auth|authorization|cle|clé|key|pin|email|e-mail|"
+            r"username|user|login|identifiant)(\\?[\"']?)(\s*[:=]\s*|\s+)"
+            r"(?!!secret)(\\?[\"']?)([^\s,'\"\\}\]]+)"
         ),
-        r"\1\2\3‹MASQUÉ›\3",
+        r"\1\2\3\4\5‹MASQUÉ›",
     ),
     # Adresses e-mail
     (re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+"), "‹EMAIL›"),
