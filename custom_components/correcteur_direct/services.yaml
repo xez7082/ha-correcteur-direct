@@ -38,3 +38,10 @@ corriger_yaml:
       default: true
       selector:
         boolean:
+verifier:
+  fields:
+    id:
+      required: true
+      selector:
+        text:
+tout_verifier:

@@ -50,6 +50,13 @@ def async_enregistrer_services(hass: HomeAssistant) -> None:
     async def corriger_yaml(call: ServiceCall) -> ServiceResponse:
         return await _moteur(hass).corriger_yaml(appliquer=call.data.get("appliquer", True))
 
+    async def verifier(call: ServiceCall) -> None:
+        if not _moteur(hass).verifier(call.data["id"]):
+            raise HomeAssistantError("Ce problème ne peut pas être vérifié maintenant")
+
+    async def tout_verifier(call: ServiceCall) -> ServiceResponse:
+        return {"en_verification": _moteur(hass).tout_verifier()}
+
     async def vider(call: ServiceCall) -> None:
         _moteur(hass).vider()
 
@@ -69,6 +76,10 @@ def async_enregistrer_services(hass: HomeAssistant) -> None:
     hass.services.async_register(DOMAIN, "reanalyser", reanalyser, SCHEMA_ID)
     hass.services.async_register(DOMAIN, "annuler_correctif", annuler, SCHEMA_ID)
     hass.services.async_register(DOMAIN, "vider_historique", vider)
+    hass.services.async_register(DOMAIN, "verifier", verifier, SCHEMA_ID)
+    hass.services.async_register(
+        DOMAIN, "tout_verifier", tout_verifier, supports_response=SupportsResponse.OPTIONAL
+    )
     hass.services.async_register(
         DOMAIN, "corriger_yaml", corriger_yaml,
         vol.Schema({vol.Optional("appliquer", default=True): bool}),

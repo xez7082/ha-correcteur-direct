@@ -3,7 +3,7 @@ from __future__ import annotations
 
 DOMAIN = "correcteur_direct"
 NOM = "Correcteur en direct"
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 
 # Options
 CONF_API_KEY = "api_key"
@@ -16,6 +16,7 @@ CONF_MAX_CALLS = "appels_max_heure"
 CONF_VERIFY_DELAY = "delai_verification"
 CONF_COOLDOWN = "delai_reanalyse_h"
 CONF_MIN_CONFIDENCE = "confiance_min"
+CONF_MANUAL_DELAY = "delai_verif_manuelle"
 
 MODELES = [
     "mistral-small-latest",
@@ -33,6 +34,7 @@ DEFAUTS = {
     CONF_VERIFY_DELAY: 120,
     CONF_COOLDOWN: 6,
     CONF_MIN_CONFIDENCE: 75,
+    CONF_MANUAL_DELAY: 5,
 }
 
 MISTRAL_CHAT_URL = "https://api.mistral.ai/v1/chat/completions"

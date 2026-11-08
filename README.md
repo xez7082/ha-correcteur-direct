@@ -36,6 +36,17 @@ Sur une tablette en portrait, la liste occupe l'écran et le détail s'ouvre d'u
 8. **Contrôle de configuration** : après toute modification de fichier, la configuration est
    vérifiée. Si la modification ajoute une erreur, le fichier est restauré immédiatement.
 
+## ✔️ « J'ai corrigé » et « Tout vérifier »
+
+Après avoir corrigé un fichier vous-même (et rechargé ou redémarré Home Assistant) :
+
+- **✔️ J'ai corrigé** sur une carte : l'erreur est surveillée pendant 5 minutes (réglable).
+  Si elle ne revient pas, la carte passe dans **Corrigés** ; si elle revient, elle repasse
+  immédiatement dans **À traiter** avec « La correction n'a pas suffi ». Aucun appel à l'IA.
+- **✔️ Tout vérifier** (barre du haut) : la même chose pour toutes les erreurs non résolues d'un coup.
+- Un compte à rebours ⏱️ s'affiche pendant la vérification ; elle reprend après un redémarrage.
+- Si une erreur « corrigée » revient plus tard, sa carte réapparaît automatiquement.
+
 ## 🛠️ Bouton « Corriger les erreurs YAML »
 
 Un appui vérifie **tous** les fichiers YAML de `/config` et répare les erreurs de syntaxe :

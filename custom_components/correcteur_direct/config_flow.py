@@ -29,6 +29,7 @@ from .const import (
     CONF_COOLDOWN,
     CONF_LEVEL,
     CONF_MAX_CALLS,
+    CONF_MANUAL_DELAY,
     CONF_MIN_CONFIDENCE,
     CONF_MODEL,
     CONF_NOTIFY,
@@ -40,7 +41,7 @@ from .const import (
 )
 from .mistral import MistralCleInvalide, MistralErreur, verifier_cle
 
-ENTIERS = (CONF_MAX_CALLS, CONF_VERIFY_DELAY, CONF_COOLDOWN, CONF_MIN_CONFIDENCE)
+ENTIERS = (CONF_MAX_CALLS, CONF_VERIFY_DELAY, CONF_COOLDOWN, CONF_MIN_CONFIDENCE, CONF_MANUAL_DELAY)
 
 
 def _nombre(mini: int, maxi: int, pas: int = 1, unite: str | None = None) -> NumberSelector:
@@ -84,6 +85,7 @@ def _schema(v: dict[str, Any]) -> vol.Schema:
                 30, 900, 10, "s"
             ),
             vol.Required(CONF_COOLDOWN, default=v[CONF_COOLDOWN]): _nombre(1, 72, 1, "h"),
+            vol.Required(CONF_MANUAL_DELAY, default=v[CONF_MANUAL_DELAY]): _nombre(1, 120, 1, "min"),
         }
     )
 

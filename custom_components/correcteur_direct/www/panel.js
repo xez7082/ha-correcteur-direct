@@ -4,7 +4,7 @@ const STATUTS = {
   "analyse": ["Analyse IA…", "#38bdf8"],
   "proposé": ["À valider", "#fbbf24"],
   "application": ["Application…", "#38bdf8"],
-  "vérification": ["Vérification…", "#38bdf8"],
+  "vérification": ["Vérification", "#38bdf8"],
   "corrigé": ["Corrigé", "#4ade80"],
   "échec": ["Échec", "#f87171"],
   "sans_correctif": ["Pas de correctif auto", "#cbd5e1"],
@@ -36,6 +36,11 @@ const espaces = (t) => String(t ?? "").split("\n").map((l) => {
 }).join("\n");
 const court = (chemin) => String(chemin || "").replace(/^\/config\//, "");
 
+function reste(iso) {
+  const s = Math.max(0, Math.round((new Date(iso).getTime() - Date.now()) / 1000));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
 function ilYa(iso) {
   if (!iso) return "";
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
@@ -63,11 +68,12 @@ class CorrecteurDirectPanel extends HTMLElement {
       this._squelette();
       this._charger();
       this._minuteur = setInterval(() => this._charger(), 3000);
+      this._horloge = setInterval(() => this._majTemps(), 1000);
     }
   }
   set narrow(n) { this._narrow = n; const b = this.shadowRoot?.getElementById("menu"); if (b) b.hidden = !n; }
   set panel(p) { this._panel = p; }
-  disconnectedCallback() { clearInterval(this._minuteur); this._init = false; }
+  disconnectedCallback() { clearInterval(this._minuteur); clearInterval(this._horloge); this._init = false; }
   connectedCallback() { if (this._hass && !this._init) this.hass = this._hass; }
 
   async _charger() {
@@ -76,10 +82,16 @@ class CorrecteurDirectPanel extends HTMLElement {
       this._donnees = d;
       const cle = JSON.stringify(d) + this._onglet + this._choisi;
       if (cle !== this._dernier) { this._dernier = cle; this._rendre(); }
-      else this.shadowRoot.querySelectorAll("[data-iso]").forEach((e) => (e.textContent = ilYa(e.dataset.iso)));
+      else this._majTemps();
     } catch (e) {
       this.shadowRoot.getElementById("liste").innerHTML = `<div class="vide">Intégration non chargée : ${esc(e.message || e)}</div>`;
     }
+  }
+
+  _majTemps() {
+    const r = this.shadowRoot;
+    r.querySelectorAll("[data-iso]").forEach((e) => (e.textContent = ilYa(e.dataset.iso)));
+    r.querySelectorAll("[data-fin]").forEach((e) => (e.textContent = reste(e.dataset.fin)));
   }
 
   async _service(service, data = {}, retour = false) {
@@ -91,6 +103,11 @@ class CorrecteurDirectPanel extends HTMLElement {
       if (service === "corriger_yaml") {
         if (!b.erreurs) this._toast("✅ Tous vos fichiers YAML sont valides");
         else this._toast(`${b.erreurs} fichier(s) en erreur : ${b.corriges} réparé(s), ${b.non_repares} à corriger à la main\n` + (b.details || []).join("\n"), b.non_repares > 0, 12000);
+      } else if (service === "tout_verifier") {
+        const n = b.en_verification ?? 0;
+        this._toast(n ? `${n} erreur(s) en vérification : celles qui ne reviennent pas passeront dans « Corrigés »` : "Rien à vérifier");
+      } else if (service === "verifier") {
+        this._toast("Vérification lancée : si l'erreur ne revient pas, la carte passera dans « Corrigés »");
       } else if (service === "analyser_maintenant") {
         const n = b.nouveaux_problemes ?? 0;
         this._toast(n ? `${n} nouvelle(s) erreur(s) trouvée(s)` : "Aucune nouvelle erreur dans le journal");
@@ -164,6 +181,8 @@ class CorrecteurDirectPanel extends HTMLElement {
         .esp { color:#fbbf24; }
         .meta { font-size:14px; color:#cbd5e1; }
         .multi { white-space:pre-line; }
+        .verif { margin-top:10px; padding:10px 12px; border:2px solid #38bdf8; border-radius:10px; background:#0c2340; }
+        .verif.ok { border-color:#4ade80; background:#0f2e1c; }
         .alerte { color:#fca5a5; margin-top:8px; }
         .boutons { display:flex; gap:8px; flex-wrap:wrap; margin:14px 0 6px; position:sticky; bottom:0;
           background:#0f172a; padding:8px 0; }
@@ -198,6 +217,7 @@ class CorrecteurDirectPanel extends HTMLElement {
           <div class="chiffres" id="chiffres"></div>
           <div class="actions-haut">
             <button id="yaml" class="vert" title="Corriger les erreurs YAML">🛠️ <span>Corriger YAML</span></button>
+            <button id="toutverif" title="Vérifier toutes les erreurs non résolues">✔️ <span>Tout vérifier</span></button>
             <button id="analyser" class="bleu" title="Analyser le journal">🔍 <span>Journal</span></button>
             <button id="tester" title="Écrire une fausse erreur pour tester">🧪 <span>Tester</span></button>
           </div>
@@ -216,6 +236,10 @@ class CorrecteurDirectPanel extends HTMLElement {
     const r = this.shadowRoot;
     r.getElementById("menu").onclick = () => this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true }));
     r.getElementById("analyser").onclick = () => this._service("analyser_maintenant", {}, true);
+    r.getElementById("toutverif").onclick = () => {
+      if (!confirm("Vous avez corrigé des fichiers ?\n\nToutes les erreurs non résolues vont être surveillées quelques minutes. Celles qui ne reviennent pas passeront dans « Corrigés ».\n\nPensez d'abord à recharger la configuration ou à redémarrer Home Assistant.")) return;
+      this._service("tout_verifier", {}, true);
+    };
     r.getElementById("tester").onclick = () => { this._service("tester"); this._toast("Fausse erreur écrite : elle doit apparaître dans quelques secondes"); };
     r.getElementById("yaml").onclick = () => {
       if (!confirm("Vérifier tous les fichiers YAML et réparer les erreurs de syntaxe ?\n\nUne sauvegarde est faite avant chaque modification.")) return;
@@ -238,7 +262,8 @@ class CorrecteurDirectPanel extends HTMLElement {
       if (action === "redemarrer" && !confirm("Redémarrer Home Assistant maintenant ?")) return;
       if (action === "appliquer_fichier" && !confirm("Modifier le fichier ? Une sauvegarde est faite avant.")) return;
       const service = { appliquer: "appliquer_correctif", appliquer_fichier: "appliquer_correctif", redemarrer: "appliquer_correctif",
-        ignorer: "ignorer", reactiver: "reactiver", reanalyser: "reanalyser", annuler: "annuler_correctif" }[action];
+        ignorer: "ignorer", reactiver: "reactiver", reanalyser: "reanalyser", annuler: "annuler_correctif",
+        verifier: "verifier" }[action];
       b.disabled = true;
       this._service(service, { id });
     });
@@ -296,7 +321,7 @@ class CorrecteurDirectPanel extends HTMLElement {
         <span class="resume"><div class="titre">${esc(a.resume || p.message.split("\n")[0])}</div>
           <div class="sous">${esc(ou)} · ${p.occurrences}× · <span data-iso="${esc(p.dernier)}">${ilYa(p.dernier)}</span></div>
           ${["quota", "erreur_ia", "échec"].includes(p.statut) && p.erreur ? `<div class="sous raison">⚠️ ${esc(p.erreur)}</div>` : ""}</span>
-        <span class="statut" style="color:${stCoul}">${stNom}</span>
+        <span class="statut" style="color:${stCoul}">${p.verif_fin ? `⏱️ <span data-fin="${esc(p.verif_fin)}">${reste(p.verif_fin)}</span>` : stNom}</span>
       </button>`;
     }).join("") : `<div class="vide">${this._onglet === "traiter" ? "✅ Aucune erreur à traiter.<br>Le journal est surveillé en direct." : "Rien ici."}</div>`;
 
@@ -337,6 +362,8 @@ class CorrecteurDirectPanel extends HTMLElement {
       else if (c.type === "modif_fichier") actions.push(btn("appliquer_fichier", "✅ Appliquer", "vert"));
       else actions.push(btn("appliquer", "✅ Appliquer", "vert"));
     }
+    if (["proposé", "échec", "récidive", "sans_correctif", "erreur_ia", "quota", "en_file"].includes(p.statut))
+      actions.push(btn("verifier", "✔️ J'ai corrigé", "bleu"));
     if (p.statut === "corrigé" && p.retour_arriere && p.retour_arriere.type === "fichier") actions.push(btn("annuler", "↩️ Annuler", "rouge"));
     if (!["analyse", "application", "vérification", "en_file", "ignoré"].includes(p.statut) && p.type !== "yaml") actions.push(btn("reanalyser", "🔁 Réanalyser"));
     if (p.statut === "ignoré") actions.push(btn("reactiver", "👁️ Réactiver"));
@@ -352,6 +379,8 @@ class CorrecteurDirectPanel extends HTMLElement {
       <h2>${esc(a.resume || p.message.split("\n")[0])}</h2>
       <div class="meta">${esc(p.nom)} · ${p.occurrences} fois · vue <span data-iso="${esc(p.dernier)}">${ilYa(p.dernier)}</span></div>
       ${fichiers ? `<div class="fichier">${fichiers}</div>` : ""}
+      ${p.verif_fin ? `<div class="verif">⏱️ Vérification en cours — encore <b data-fin="${esc(p.verif_fin)}">${reste(p.verif_fin)}</b>. Si l'erreur revient, la carte repassera dans « À traiter ».</div>` : ""}
+      ${p.corrige_main && p.statut === "corrigé" ? `<div class="verif ok">✔️ Corrigé par vous : l'erreur n'est pas revenue pendant la vérification.</div>` : ""}
       ${p.erreur ? `<div class="alerte">⚠️ ${esc(p.erreur)}</div>` : ""}
       ${a.cause ? `<h3>Cause</h3><div class="multi">${esc(a.cause)}</div>` : ""}
       ${correctif}

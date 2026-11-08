@@ -28,6 +28,7 @@ from .const import (
     CONF_COOLDOWN,
     CONF_LEVEL,
     CONF_MAX_CALLS,
+    CONF_MANUAL_DELAY,
     CONF_MIN_CONFIDENCE,
     CONF_MODEL,
     CONF_NOTIFY,
@@ -85,6 +86,13 @@ RE_COEUR = re.compile(
     r"Template error:.*|TemplateError\(.*)",
     re.S | re.I,
 )
+
+
+def ilya_court(iso: str | None) -> str:
+    sec = _age_s(iso)
+    if sec >= 1e11:
+        return "pendant la vérification"
+    return f"au bout de {int(sec // 60)} min {int(sec % 60)} s"
 
 
 def signature(nom: str, message: str) -> str:
@@ -188,7 +196,7 @@ class Moteur:
             if pb.get("statut") in (ST_FILE, ST_ANALYSE, ST_QUOTA, ST_APPLICATION):
                 pb["statut"] = ST_SANS
                 pb["erreur"] = "Interrompu par un redémarrage — utilisez « Réanalyser »."
-            elif pb.get("statut") == ST_VERIF:
+            elif pb.get("statut") == ST_VERIF and not pb.get("verif_manuelle"):
                 pb["statut"] = ST_CORRIGE
             self.problemes[pb["id"]] = pb
             self.par_sig[pb["sig"]] = pb["id"]
@@ -196,6 +204,10 @@ class Moteur:
         for pb in self.problemes.values():
             if pb.get("type") != "yaml" and not (pb.get("analyse") or {}).get("local"):
                 pb.pop("fichiers", None)  # recalculés avec la recherche actuelle
+
+        for pb in list(self.problemes.values()):
+            if pb.get("statut") == ST_VERIF and pb.get("verif_manuelle"):
+                self.verifier(pb["id"])  # relancée après redémarrage
 
         self.niveau = logging.WARNING if self.opts[CONF_LEVEL] == "WARNING" else logging.ERROR
         self._ecouteur = _Ecouteur(self)
@@ -279,6 +291,11 @@ class Moteur:
             pb = self.problemes.get(self.en_verif[sig])
             if pb:
                 pb["recidive_verif"] = True
+                if pb.get("verif_manuelle"):
+                    pb["occurrences"] += 1
+                    pb["dernier"] = maintenant
+                    self._fin_verif_manuelle(pb["id"])
+                    return
 
         iid = self.par_sig.get(sig)
         pb = self.problemes.get(iid) if iid else None
@@ -827,6 +844,65 @@ class Moteur:
                 self._notifier(pb, avec_actions=True)
         self._maj()
         return bilan
+
+    # ---------- « J'ai corrigé » : vérification sans IA ----------
+
+    @callback
+    def verifier(self, iid: str) -> bool:
+        """Surveille l'erreur quelques minutes : si elle ne revient pas, elle est corrigée."""
+        pb = self.problemes.get(iid)
+        if not pb or pb["statut"] in (ST_APPLICATION, ST_IGNORE):
+            return False
+        if pb["statut"] == ST_VERIF and not pb.get("verif_manuelle"):
+            return False  # déjà en vérification après un correctif automatique
+        minutes = max(1, int(self.opts[CONF_MANUAL_DELAY]))
+        pb["statut"] = ST_VERIF
+        pb["verif_manuelle"] = True
+        pb["verif_debut"] = _maintenant()
+        pb["verif_fin"] = datetime.fromtimestamp(
+            time.time() + minutes * 60, timezone.utc
+        ).isoformat()
+        pb.pop("recidive_verif", None)
+        pb.pop("erreur", None)
+        self.en_verif[pb["sig"]] = iid
+        persistent_notification.async_dismiss(self.hass, f"{DOMAIN}_{iid}")
+
+        @callback
+        def _fin(_now: Any) -> None:
+            self._fin_verif_manuelle(iid)
+
+        self._desabonner.append(async_call_later(self.hass, minutes * 60, _fin))
+        self._maj()
+        return True
+
+    @callback
+    def _fin_verif_manuelle(self, iid: str) -> None:
+        pb = self.problemes.get(iid)
+        if not pb or pb["statut"] != ST_VERIF or not pb.get("verif_manuelle"):
+            return  # déjà terminée
+        self.en_verif.pop(pb["sig"], None)
+        pb.pop("verif_manuelle", None)
+        pb.pop("verif_fin", None)
+        if pb.pop("recidive_verif", False):
+            pb["statut"] = ST_RECIDIVE
+            pb["erreur"] = (
+                "La correction n'a pas suffi : l'erreur est revenue pendant la vérification "
+                f"({ilya_court(pb.pop('verif_debut', None))})."
+            )
+        else:
+            pb.pop("verif_debut", None)
+            pb["statut"] = ST_CORRIGE
+            pb["corrige_main"] = True
+            self.stats["corrections"] += 1
+        self._maj()
+
+    @callback
+    def tout_verifier(self) -> int:
+        n = 0
+        for pb in list(self.problemes.values()):
+            if pb["statut"] in (ST_PROPOSE, ST_ECHEC, ST_RECIDIVE, ST_SANS, ST_ERREUR_IA, ST_QUOTA, ST_FILE):
+                n += self.verifier(pb["id"])
+        return n
 
     async def annuler(self, iid: str) -> bool:
         pb = self.problemes.get(iid)

@@ -14,7 +14,8 @@
           "service_notification": "Service de notification mobile (facultatif)",
           "appels_max_heure": "Appels IA maximum par heure",
           "delai_verification": "Durée de vérification après correction",
-          "delai_reanalyse_h": "Délai avant de réanalyser une même erreur"
+          "delai_reanalyse_h": "Délai avant de réanalyser une même erreur",
+          "delai_verif_manuelle": "Durée de vérification « J'ai corrigé »"
         },
         "data_description": {
           "api_key": "Clé gratuite sur console.mistral.ai → API Keys",
@@ -26,7 +27,8 @@
           "service_notification": "Ex. mobile_app_pixel_8 : notifications avec boutons Appliquer / Ignorer",
           "appels_max_heure": "Protège votre quota Mistral",
           "delai_verification": "Si l'erreur revient pendant ce délai, le correctif est annulé",
-          "delai_reanalyse_h": "Évite de redemander à l'IA pour une erreur déjà analysée"
+          "delai_reanalyse_h": "Évite de redemander à l'IA pour une erreur déjà analysée",
+          "delai_verif_manuelle": "Après « J'ai corrigé », l'erreur est surveillée pendant ce temps. Si elle ne revient pas, la carte passe dans Corrigés."
         }
       }
     },
@@ -53,7 +55,8 @@
           "service_notification": "Service de notification mobile (facultatif)",
           "appels_max_heure": "Appels IA maximum par heure",
           "delai_verification": "Durée de vérification après correction",
-          "delai_reanalyse_h": "Délai avant de réanalyser une même erreur"
+          "delai_reanalyse_h": "Délai avant de réanalyser une même erreur",
+          "delai_verif_manuelle": "Durée de vérification « J'ai corrigé »"
         },
         "data_description": {
           "api_key": "Clé gratuite sur console.mistral.ai → API Keys",
@@ -65,7 +68,8 @@
           "service_notification": "Ex. mobile_app_pixel_8 : notifications avec boutons Appliquer / Ignorer",
           "appels_max_heure": "Protège votre quota Mistral",
           "delai_verification": "Si l'erreur revient pendant ce délai, le correctif est annulé",
-          "delai_reanalyse_h": "Évite de redemander à l'IA pour une erreur déjà analysée"
+          "delai_reanalyse_h": "Évite de redemander à l'IA pour une erreur déjà analysée",
+          "delai_verif_manuelle": "Après « J'ai corrigé », l'erreur est surveillée pendant ce temps. Si elle ne revient pas, la carte passe dans Corrigés."
         }
       }
     },
@@ -146,6 +150,20 @@
           "description": "Désactivé : propose seulement les corrections, sans modifier les fichiers"
         }
       }
+    },
+    "verifier": {
+      "name": "J'ai corrigé",
+      "description": "Surveille l'erreur quelques minutes : si elle ne revient pas, le problème est marqué corrigé (sans IA).",
+      "fields": {
+        "id": {
+          "name": "Identifiant",
+          "description": "Identifiant du problème"
+        }
+      }
+    },
+    "tout_verifier": {
+      "name": "Tout vérifier",
+      "description": "Lance la vérification « J'ai corrigé » sur tous les problèmes non résolus."
     }
   }
 }
