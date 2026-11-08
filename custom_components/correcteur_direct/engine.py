@@ -76,8 +76,23 @@ def _age_s(iso: str | None) -> float:
         return 1e12
 
 
+RE_COEUR = re.compile(
+    r"((?:ValueError|TypeError|KeyError|UndefinedError|ZeroDivisionError)?:?\s*"
+    r"Template error:.*|TemplateError\(.*)",
+    re.S | re.I,
+)
+
+
 def signature(nom: str, message: str) -> str:
-    """Empreinte d'une erreur, indépendante des nombres et horodatages."""
+    """Empreinte d'une erreur, indépendante des nombres et horodatages.
+
+    Une même panne de modèle produit souvent deux lignes différentes
+    (« Error while executing automation… » et « …: Error executing script… ») :
+    on ne garde que le cœur de l'erreur pour les regrouper.
+    """
+    coeur = RE_COEUR.search(message)
+    if coeur:
+        message = coeur.group(1)
     norm = message.lower()
     norm = re.sub(r"0x[0-9a-f]+", "#", norm)
     norm = re.sub(r"\d+(?:[.,:]\d+)*", "#", norm)
@@ -270,6 +285,7 @@ class Moteur:
     @callback
     def _mettre_en_file(self, pb: dict[str, Any]) -> None:
         pb["statut"] = ST_FILE
+        pb.pop("erreur", None)
         self.file.put_nowait(pb["id"])
 
     def _purger(self) -> None:
@@ -692,6 +708,7 @@ class Moteur:
     def exporter(self) -> dict[str, Any]:
         problemes = sorted(self.problemes.values(), key=lambda p: p["dernier"], reverse=True)
         opts = self.opts
+        self._quota_ok()  # retire du compteur les appels de plus d'une heure
         return {
             "version": VERSION,
             "problemes": problemes,

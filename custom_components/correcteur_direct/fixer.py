@@ -47,8 +47,8 @@ class Correcteur:
         if chemin.suffix not in (".yaml", ".yml"):
             raise CorrectionErreur("Seuls les fichiers YAML peuvent être modifiés")
         parties = set(chemin.relative_to(self.racine).parts[:-1])
-        if parties & DOSSIERS_EXCLUS or any(p.startswith(".") for p in parties):
-            raise CorrectionErreur("Dossier protégé")
+        if parties & DOSSIERS_EXCLUS or any(p.startswith((".", "_")) for p in parties):
+            raise CorrectionErreur("Dossier protégé (archives, sauvegardes…)")
         if chemin.name in FICHIERS_EXCLUS:
             raise CorrectionErreur("Fichier protégé")
         return chemin

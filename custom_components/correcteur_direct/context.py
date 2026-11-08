@@ -20,6 +20,10 @@ RE_CHEMIN = re.compile(
 )
 RE_LOGGER = re.compile(r"^(?:homeassistant\.components|custom_components)\.([a-z0-9_]+)")
 
+# Dossiers lus seulement s'ils sont cités par l'erreur elle-même
+DOSSIERS_IGNORES_RECHERCHE = {"blueprints", "archive", "archives", "old", "backup"}
+MOTS_COPIES = ("sauvegarde", "backup", ".bak", "_old", ".old", "copie", "copy")
+
 TAILLE_MAX_FICHIER = 600_000
 NB_FICHIERS_MAX = 800
 LIGNES_AUTOUR = 12
@@ -86,9 +90,14 @@ def _fichiers_yaml(racine: Path) -> list[Path]:
     trouves: list[Path] = []
     for dossier, sous_dossiers, fichiers in os.walk(racine):
         sous_dossiers[:] = [
-            d for d in sous_dossiers if d not in DOSSIERS_EXCLUS and not d.startswith(".")
+            d for d in sous_dossiers
+            if d not in DOSSIERS_EXCLUS and d not in DOSSIERS_IGNORES_RECHERCHE
+            and not d.startswith((".", "_"))
         ]
         for nom in fichiers:
+            bas = nom.lower()
+            if any(mot in bas for mot in MOTS_COPIES):
+                continue  # copies de sauvegarde : jamais la source de l'erreur
             if nom.endswith((".yaml", ".yml")) and nom not in FICHIERS_EXCLUS:
                 trouves.append(Path(dossier) / nom)
                 if len(trouves) >= NB_FICHIERS_MAX:
